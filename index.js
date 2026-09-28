@@ -45,7 +45,7 @@ function saveActiveChannels(channelsSet) {
 }
 const activeChannels = loadActiveChannels();
 
-client.once('ready', () => console.log(`Bot Velocity Elite Club (AI & SSRP Pro HD) online!`));
+client.once('ready', () => console.log(`Bot Velocity Elite Club (AI, Chatlogs & SSRP Pro HD) online!`));
 
 async function generateWithRetry(model, chatPrompt, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
@@ -291,7 +291,7 @@ client.on('messageCreate', async (message) => {
     const hasAiPrefix = content.startsWith('!ai');
     let promptText = content;
     if (hasAiPrefix) promptText = content.slice(3).trim();
-    else if (isMentioned) promptText = content.replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '').trim();
+    else if (isMentioned) promptText = message.content.replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '').trim();
     
     if (!promptText) return;
 
@@ -303,7 +303,7 @@ client.on('messageCreate', async (message) => {
         if (memory.length > 10) memory.shift(); 
         aiMemories.set(channelId, memory);
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
         const sys = `Teman nongkrong asik Velocity Elite Club. Panggil nama akrab user (sebelum titik dua). Jangan panggil V-CEO atau pakai ||. Sifat: Santai, gaul (lu/gw), ceplas-ceplos. Creator: ID ${CREATOR_ID}.`;
         const chatPrompt = `${sys}\n\n=== RIWAYAT ===\n${memory.join('\n')}\n\nBalas natural!`;
         
@@ -371,14 +371,10 @@ client.on('interactionCreate', async (interaction) => {
 
                         if (clSession.lang !== 'all') {
                             const waitMsg = await msg.channel.send('⏳ *AI sedang menyeleksi bahasa chatlog kamu...*');
-                            const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
+                            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
                             const langName = clSession.lang === 'id' ? 'Indonesia' : 'Inggris';
                             
-                            const prompt = `Ini adalah chatlog SA-MP mentah. Tugasmu:
-                            1. Filter dan HANYA sisakan baris yang percakapannya menggunakan bahasa ${langName}.
-                            2. TETAP pertahankan baris aksi roleplay yang diawali tanda bintang (*).
-                            3. JANGAN merubah format, nama karakter, atau menambahkan teks lain. Cukup hapus baris obrolan yang beda bahasa.
-                            Teks Chatlog:\n${cleanedLines.join('\n')}`;
+                            const prompt = `Filter chatlog SA-MP ini. Hanya ambil baris berbahasa ${langName} dan baris aksi (*). Jangan ubah format, cukup hapus baris obrolan yang beda bahasa. Teks:\n${cleanedLines.join('\n')}`;
 
                             try {
                                 const aiRes = await generateWithRetry(model, prompt);
@@ -549,7 +545,6 @@ client.on('interactionCreate', async (interaction) => {
 
                 await interaction.message.delete().catch(() => {});
                 await interaction.channel.send({ content: `✅ **Selesai!** Ini hasil SSRP Ultra HD jernih kamu, <@${interaction.user.id}> 📸✨`, files: [resultAttachment] });
-                userSessions.userSessions?.delete(interaction.user.id);
                 userSessions.delete(interaction.user.id);
             } catch (err) {
                 await interaction.channel.send(`Duh, gagal merender hasil final: \`${err.message}\` 💀`);
