@@ -45,7 +45,7 @@ function saveActiveChannels(channelsSet) {
 }
 const activeChannels = loadActiveChannels();
 
-client.once('ready', () => console.log(`Bot Velocity Elite Club (All-in-One AI, SSRP Pro & Discord URL Compressor) online!`));
+client.once('ready', () => console.log(`Bot Velocity Elite Club (AI & SSRP Pro HD) online!`));
 
 async function generateWithRetry(model, chatPrompt, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
@@ -67,16 +67,14 @@ function getCleanName(displayName) {
     return displayName.trim();
 }
 
-// --- FUNGSI RENDER GAMBAR SSRP ---
+// --- FUNGSI RENDER GAMBAR SSRP (TEKS RAPI & ANTI-NYAMBUNG) ---
 async function renderImage(session, isPreview = true) {
     let sourceBuffer = isPreview ? session.previewBuffer : session.imageBuffer;
     let image = await Jimp.read(sourceBuffer);
     
-    // Crop & Resize
     image.crop(session.vpX, session.vpY, session.vpW, session.vpH);
     image.resize(800, 600);
 
-    // Filter Warna
     if (session.filter === 'grayscale') image.greyscale();
     else if (session.filter === 'vibrant') image.color([{ apply: 'brighten', params: [10] }, { apply: 'saturate', params: [20] }]);
     else if (session.filter === 'dark') image.color([{ apply: 'darken', params: [15] }, { apply: 'desaturate', params: [10] }]);
@@ -99,28 +97,36 @@ async function renderImage(session, isPreview = true) {
             let startX = 25; 
             if (block.pos.includes('right')) startX = 800 - tWidth - 25; 
 
-            // Center-Aligned 1px Stroke (Anti-nyambung & rapi ala SA-MP asli)
-            const strokeLayer = new Jimp(tWidth + 2, tHeight + 2, 0x00000000);
-            strokeLayer.print(font, 0, 1, line).print(font, 2, 1, line).print(font, 1, 0, line).print(font, 1, 2, line);
+            // Render Stroke Hitam Terpisah (Anti-Nyambung)
+            const strokeLayer = new Jimp(tWidth + 4, tHeight + 4, 0x00000000);
+            strokeLayer.print(font, 0, 2, line)
+                       .print(font, 4, 2, line)
+                       .print(font, 2, 0, line)
+                       .print(font, 2, 4, line);
+            
             strokeLayer.scan(0, 0, strokeLayer.bitmap.width, strokeLayer.bitmap.height, function(x, y, idx) {
                 if (this.bitmap.data[idx+3] > 0) {
-                    this.bitmap.data[idx] = 0; this.bitmap.data[idx+1] = 0; this.bitmap.data[idx+2] = 0;
+                    this.bitmap.data[idx] = 0; 
+                    this.bitmap.data[idx+1] = 0; 
+                    this.bitmap.data[idx+2] = 0;
                 }
             });
 
-            const textLayer = new Jimp(tWidth + 2, tHeight + 2, 0x00000000);
-            textLayer.print(font, 1, 1, line);
+            const textLayer = new Jimp(tWidth + 4, tHeight + 4, 0x00000000);
+            textLayer.print(font, 2, 2, line);
             
             if (isAction) {
                 textLayer.scan(0, 0, textLayer.bitmap.width, textLayer.bitmap.height, function(x, y, idx) {
                     if (this.bitmap.data[idx+3] > 0) {
-                        this.bitmap.data[idx] = 194; this.bitmap.data[idx+1] = 162; this.bitmap.data[idx+2] = 218; 
+                        this.bitmap.data[idx] = 194; 
+                        this.bitmap.data[idx+1] = 162; 
+                        this.bitmap.data[idx+2] = 218; 
                     }
                 });
             }
 
-            image.composite(strokeLayer, startX - 1, currentY - 1);
-            image.composite(textLayer, startX - 1, currentY - 1);
+            image.composite(strokeLayer, startX - 2, currentY - 2);
+            image.composite(textLayer, startX - 2, currentY - 2);
 
             currentY += tHeight + 2; 
         }
@@ -150,10 +156,8 @@ async function updateChatlogsPanel(interaction, session) {
 
     const rowLines = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder().setCustomId('clog_lines').setPlaceholder('📏 Pilih Jumlah Baris Per Blok...').addOptions([
-            { label: '5 Baris per blok', value: '5' },
-            { label: '10 Baris per blok', value: '10' },
-            { label: '15 Baris per blok', value: '15' },
-            { label: '20 Baris per blok', value: '20' }
+            { label: '5 Baris per blok', value: '5' }, { label: '10 Baris per blok', value: '10' },
+            { label: '15 Baris per blok', value: '15' }, { label: '20 Baris per blok', value: '20' }
         ])
     );
 
@@ -317,7 +321,6 @@ client.on('messageCreate', async (message) => {
 
 // --- INTERAKSI BUTTON & MODAL ---
 client.on('interactionCreate', async (interaction) => {
-    // 1. INTERAKSI CHATLOGS EXTRACTOR
     if (interaction.customId && interaction.customId.startsWith('clog_')) {
         let clSession = chatlogSessions.get(interaction.user.id);
         if (!clSession) return interaction.reply({ content: 'Sesi chatlog habis, ketik `!chatlogs` lagi.', ephemeral: true });
@@ -402,7 +405,6 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // 2. INTERAKSI SSRP BUILDER
     let session = userSessions.get(interaction.user.id);
     if (!session && !interaction.customId.startsWith('clog_') && interaction.customId !== 'btn_cancel') return;
 
@@ -476,16 +478,13 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.deleteReply().catch(() => {});
                 await interaction.message.delete().catch(() => {});
 
-                // --- TRIK URL DISCORD (SERVER DISCORD YANG KOMPRES OTOMATIS) ---
                 let optimizedUrl = attachment.url.replace('cdn.discordapp.com', 'media.discordapp.net');
                 optimizedUrl = `${optimizedUrl}?width=1280&height=960`;
 
-                // Ambil versi yang sudah dikecilkan oleh Discord untuk PREVIEW (Aman dari RAM meluber)
                 const previewRes = await fetch(optimizedUrl);
                 const previewBuf = await previewRes.arrayBuffer();
                 session.previewBuffer = Buffer.from(previewBuf);
 
-                // Ambil versi ORIGINAL untuk FINISHING HD nanti
                 const origRes = await fetch(attachment.url);
                 const origBuf = await origRes.arrayBuffer();
                 session.imageBuffer = Buffer.from(origBuf);
@@ -550,6 +549,7 @@ client.on('interactionCreate', async (interaction) => {
 
                 await interaction.message.delete().catch(() => {});
                 await interaction.channel.send({ content: `✅ **Selesai!** Ini hasil SSRP Ultra HD jernih kamu, <@${interaction.user.id}> 📸✨`, files: [resultAttachment] });
+                userSessions.userSessions?.delete(interaction.user.id);
                 userSessions.delete(interaction.user.id);
             } catch (err) {
                 await interaction.channel.send(`Duh, gagal merender hasil final: \`${err.message}\` 💀`);
