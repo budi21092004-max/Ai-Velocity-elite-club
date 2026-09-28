@@ -12,7 +12,7 @@ const {
     EmbedBuilder 
 } = require('discord.js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const Jimp = require('jimp');
+const sharp = require('sharp'); // Mengganti jimp dengan sharp untuk efisiensi memori
 const fs = require('fs');
 const path = require('path');
 
@@ -45,7 +45,7 @@ function saveActiveChannels(channelsSet) {
 }
 const activeChannels = loadActiveChannels();
 
-client.once('ready', () => console.log(`Bot Velocity Elite Club (AI, Chatlogs & SSRP Pro HD) online!`));
+client.once('ready', () => console.log(`Bot Velocity Elite Club (AI & SSRP Sharp-Engine) online!`));
 
 async function generateWithRetry(model, chatPrompt, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
@@ -67,76 +67,83 @@ function getCleanName(displayName) {
     return displayName.trim();
 }
 
-// --- FUNGSI RENDER GAMBAR SSRP (TEKS RAPI & ANTI-NYAMBUNG) ---
+// --- FUNGSI RENDER GAMBAR SSRP (SHARP ENGINE) ---
 async function renderImage(session, isPreview = true) {
     let sourceBuffer = isPreview ? session.previewBuffer : session.imageBuffer;
-    let image = await Jimp.read(sourceBuffer);
     
-    image.crop(session.vpX, session.vpY, session.vpW, session.vpH);
-    image.resize(800, 600);
+    // Inisialisasi sharp dan crop viewport
+    let imageObj = sharp(sourceBuffer).extract({ 
+        left: session.vpX, 
+        top: session.vpY, 
+        width: session.vpW, 
+        height: session.vpH 
+    }).resize(800, 600); // Standardisasi canvas 800x600 sebelum text overlay
 
-    if (session.filter === 'grayscale') image.greyscale();
-    else if (session.filter === 'vibrant') image.color([{ apply: 'brighten', params: [10] }, { apply: 'saturate', params: [20] }]);
-    else if (session.filter === 'dark') image.color([{ apply: 'darken', params: [15] }, { apply: 'desaturate', params: [10] }]);
+    // Filter warna
+    switch (session.filter) {
+        case 'grayscale': 
+            imageObj = imageObj.grayscale(); 
+            break;
+        case 'vibrant': 
+            imageObj = imageObj.modulate({ brightness: 1.1, saturation: 1.2 }); 
+            break;
+        case 'dark': 
+            imageObj = imageObj.modulate({ brightness: 0.85, saturation: 0.9 }); 
+            break;
+        default: 
+            break;
+    }
 
-    const font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE); 
-    
+    // Buat SVG teks overlay
+    let svgTexts = '';
+    const lineHeight = 22;
+    const marginX = 25;
+    const marginBottom = 25;
+    const canvasWidth = 800;
+    const canvasHeight = 600;
+
+    const yPositions = {
+        'top-left': marginBottom + 15,
+        'bottom-left': canvasHeight - marginBottom,
+        'top-right': marginBottom + 15,
+        'bottom-right': canvasHeight - marginBottom
+    };
+
     for (const block of session.blocks) {
+        const pos = block.pos;
         const lines = block.text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        let totalTextHeight = 0;
-        for (const line of lines) totalTextHeight += Jimp.measureTextHeight(font, line, 800) + 2;
+        let yStart = yPositions[pos] ?? marginBottom;
 
-        let currentY = 25; 
-        if (block.pos.includes('bottom')) currentY = 600 - totalTextHeight - 25; 
-
-        for (const line of lines) {
-            const isAction = line.startsWith('*');
-            const tWidth = Jimp.measureText(font, line);
-            const tHeight = Jimp.measureTextHeight(font, line, 800);
-            
-            let startX = 25; 
-            if (block.pos.includes('right')) startX = 800 - tWidth - 25; 
-
-            // Render Stroke Hitam Terpisah (Anti-Nyambung)
-            const strokeLayer = new Jimp(tWidth + 4, tHeight + 4, 0x00000000);
-            strokeLayer.print(font, 0, 2, line)
-                       .print(font, 4, 2, line)
-                       .print(font, 2, 0, line)
-                       .print(font, 2, 4, line);
-            
-            strokeLayer.scan(0, 0, strokeLayer.bitmap.width, strokeLayer.bitmap.height, function(x, y, idx) {
-                if (this.bitmap.data[idx+3] > 0) {
-                    this.bitmap.data[idx] = 0; 
-                    this.bitmap.data[idx+1] = 0; 
-                    this.bitmap.data[idx+2] = 0;
-                }
-            });
-
-            const textLayer = new Jimp(tWidth + 4, tHeight + 4, 0x00000000);
-            textLayer.print(font, 2, 2, line);
-            
-            if (isAction) {
-                textLayer.scan(0, 0, textLayer.bitmap.width, textLayer.bitmap.height, function(x, y, idx) {
-                    if (this.bitmap.data[idx+3] > 0) {
-                        this.bitmap.data[idx] = 194; 
-                        this.bitmap.data[idx+1] = 162; 
-                        this.bitmap.data[idx+2] = 218; 
-                    }
-                });
-            }
-
-            image.composite(strokeLayer, startX - 2, currentY - 2);
-            image.composite(textLayer, startX - 2, currentY - 2);
-
-            currentY += tHeight + 2; 
+        if (pos.includes('bottom')) {
+            yStart -= (lines.length * lineHeight);
         }
+
+        const xStart = pos.includes('right') ? canvasWidth - marginX : marginX;
+        
+        // Render tiap baris sebagai SVG
+        lines.forEach((line, i) => {
+            const fillCol = line.startsWith('*') ? '#C2A2DA' : '#FFFFFF';
+            const textAnchor = pos.includes('right') ? 'end' : 'start';
+            const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            
+            svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="2" paint-order="stroke" text-anchor="${textAnchor}">${safeLine}</text>\n`;
+        });
+    }
+
+    if (session.blocks.length > 0) {
+        const svgImage = `<svg width="${canvasWidth}" height="${canvasHeight}">${svgTexts}</svg>`;
+        const svgBuffer = Buffer.from(svgImage);
+        
+        // Overlay teks ke image dengan blend over
+        imageObj = imageObj.composite([{ input: svgBuffer, blend: 'over' }]);
     }
 
     if (isPreview) {
-        image.resize(400, 300);
-        image.quality(70);
+        imageObj = imageObj.resize(400, 300);
     }
-    return await image.getBufferAsync(Jimp.MIME_PNG);
+
+    // Output buffer PNG
+    return await imageObj.png({ quality: isPreview ? 70 : 100 }).toBuffer();
 }
 
 // --- UI UPDATE FUNCTIONS ---
@@ -224,7 +231,6 @@ client.on('messageCreate', async (message) => {
     const hasRole = message.member && message.member.roles.cache.has(ALLOWED_ROLE_ID);
     const isCreator = message.author.id === CREATOR_ID;
 
-    // --- COMMAND !CHATLOGS ---
     if (content === '!chatlogs') {
         if (!hasRole && !isCreator) return message.reply('Waduh, 🤪 kamu tidak punya izin!');
         chatlogSessions.set(message.author.id, { lang: 'all', lines: 10 });
@@ -257,7 +263,6 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [embed], components: [rowLang, rowLines, rowBtn] });
     }
 
-    // --- COMMAND !SSRP ---
     if (content === '!ssrp') {
         if (!hasRole && !isCreator) return message.reply('Waduh, 🤪 kamu tidak punya izin!');
         userSessions.set(message.author.id, { blocks: [], tempText: '' });
@@ -272,7 +277,6 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [embed], components: [row] });
     }
 
-    // --- AI GEMINI MEMORY CHAT ---
     if (content === '!startai' || content === '!stopai') {
         if (!isCreator) return message.reply('Hanya creator yang bisa mengatur ini!');
         if (content === '!startai') {
@@ -313,7 +317,6 @@ client.on('messageCreate', async (message) => {
         aiMemories.set(channelId, memory);
         await message.reply(replyText);
     } catch (error) {
-        console.error(error);
         if (error.message.includes('503')) await message.reply('Otak AI gw lagi pusing (Server Sibuk) 🥵.');
         else if (error.message.includes('429')) await message.reply('Waduh gw lagi ditanya banyak orang nih (Limit). Santai sebat dulu ☕');
     }
@@ -439,6 +442,11 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.isButton()) {
         if (interaction.customId === 'btn_cancel') {
+            let activeSession = userSessions.get(interaction.user.id);
+            if (activeSession) {
+                activeSession.previewBuffer = null;
+                activeSession.imageBuffer = null;
+            }
             userSessions.delete(interaction.user.id);
             return interaction.update({ content: 'Proses dibatalkan. ✖️', embeds: [], components: [], files: [] });
         }
@@ -485,9 +493,9 @@ client.on('interactionCreate', async (interaction) => {
                 const origBuf = await origRes.arrayBuffer();
                 session.imageBuffer = Buffer.from(origBuf);
 
-                const originalImage = await Jimp.read(session.imageBuffer);
-                const origW = originalImage.bitmap.width; 
-                const origH = originalImage.bitmap.height;
+                const metadata = await sharp(session.imageBuffer).metadata();
+                const origW = metadata.width; 
+                const origH = metadata.height;
 
                 let vpW = Math.min(origW, Math.floor(origH * (800/600)));
                 let vpH = Math.floor(vpW * (600/800));
@@ -545,6 +553,13 @@ client.on('interactionCreate', async (interaction) => {
 
                 await interaction.message.delete().catch(() => {});
                 await interaction.channel.send({ content: `✅ **Selesai!** Ini hasil SSRP Ultra HD jernih kamu, <@${interaction.user.id}> 📸✨`, files: [resultAttachment] });
+                
+                // Bersihkan memori agar tidak OOM
+                let activeSession = userSessions.get(interaction.user.id);
+                if (activeSession) {
+                    activeSession.imageBuffer = null;
+                    activeSession.previewBuffer = null;
+                }
                 userSessions.delete(interaction.user.id);
             } catch (err) {
                 await interaction.channel.send(`Duh, gagal merender hasil final: \`${err.message}\` 💀`);
