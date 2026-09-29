@@ -12,7 +12,7 @@ const {
     EmbedBuilder 
 } = require('discord.js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const sharp = require('sharp'); // Mengganti jimp dengan sharp untuk efisiensi memori
+const sharp = require('sharp'); 
 const fs = require('fs');
 const path = require('path');
 
@@ -45,7 +45,8 @@ function saveActiveChannels(channelsSet) {
 }
 const activeChannels = loadActiveChannels();
 
-client.once('ready', () => console.log(`Bot Velocity Elite Club (AI & SSRP Sharp-Engine) online!`));
+// Ubah event ready ke clientReady agar warning hilang
+client.once('clientReady', () => console.log(`Bot Velocity Elite Club (AI & SSRP Sharp-Engine) online!`));
 
 async function generateWithRetry(model, chatPrompt, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
@@ -69,17 +70,15 @@ function getCleanName(displayName) {
 
 // --- FUNGSI RENDER GAMBAR SSRP (SHARP ENGINE) ---
 async function renderImage(session, isPreview = true) {
-    let sourceBuffer = isPreview ? session.previewBuffer : session.imageBuffer;
+    let sourceBuffer = session.imageBuffer;
     
-    // Inisialisasi sharp dan crop viewport
     let imageObj = sharp(sourceBuffer).extract({ 
         left: session.vpX, 
         top: session.vpY, 
         width: session.vpW, 
         height: session.vpH 
-    }).resize(800, 600); // Standardisasi canvas 800x600 sebelum text overlay
+    }).resize(800, 600); 
 
-    // Filter warna
     switch (session.filter) {
         case 'grayscale': 
             imageObj = imageObj.grayscale(); 
@@ -94,7 +93,6 @@ async function renderImage(session, isPreview = true) {
             break;
     }
 
-    // Buat SVG teks overlay
     let svgTexts = '';
     const lineHeight = 22;
     const marginX = 25;
@@ -120,7 +118,6 @@ async function renderImage(session, isPreview = true) {
 
         const xStart = pos.includes('right') ? canvasWidth - marginX : marginX;
         
-        // Render tiap baris sebagai SVG
         lines.forEach((line, i) => {
             const fillCol = line.startsWith('*') ? '#C2A2DA' : '#FFFFFF';
             const textAnchor = pos.includes('right') ? 'end' : 'start';
@@ -133,8 +130,6 @@ async function renderImage(session, isPreview = true) {
     if (session.blocks.length > 0) {
         const svgImage = `<svg width="${canvasWidth}" height="${canvasHeight}">${svgTexts}</svg>`;
         const svgBuffer = Buffer.from(svgImage);
-        
-        // Overlay teks ke image dengan blend over
         imageObj = imageObj.composite([{ input: svgBuffer, blend: 'over' }]);
     }
 
@@ -142,7 +137,6 @@ async function renderImage(session, isPreview = true) {
         imageObj = imageObj.resize(400, 300);
     }
 
-    // Output buffer PNG
     return await imageObj.png({ quality: isPreview ? 70 : 100 }).toBuffer();
 }
 
@@ -193,34 +187,41 @@ async function updateInitialPanel(interaction, session) {
 }
 
 async function updateStudioUI(interaction, session) {
-    const buffer = await renderImage(session, true);
-    const previewAttachment = new AttachmentBuilder(buffer, { name: 'preview.png' });
-    const embed = new EmbedBuilder().setTitle('🎛️ STUDIO INTERAKTIF SSRP').setDescription('⚠️ *Preview dioptimalkan otomatis. Hasil akhir (Finishing) tetap Ultra HD.*').setColor(0xFFA500).setImage('attachment://preview.png');
-    
-    const rowPan = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('pan_left').setEmoji('⬅️').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('pan_up').setEmoji('⬆️').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('pan_down').setEmoji('⬇️').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('pan_right').setEmoji('➡️').setStyle(ButtonStyle.Secondary)
-    );
-    const rowZoom = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('zoom_in').setLabel('Zoom In').setEmoji('⏺️').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('zoom_out').setLabel('Zoom Out').setEmoji('🔽').setStyle(ButtonStyle.Primary)
-    );
-    const rowFilter = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder().setCustomId('select_filter').setPlaceholder('🎨 Pilih Filter Warna Foto...').addOptions([
-            { label: 'Original', value: 'original' }, { label: 'Cerah (HDR)', value: 'vibrant' },
-            { label: 'Gelap (Cinematic)', value: 'dark' }, { label: 'Hitam Putih (Vintage)', value: 'grayscale' }
-        ])
-    );
-    const rowAction = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_finishing').setLabel('🚀 FINISHING (BUAT SSRP HD)').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('btn_cancel').setLabel('Batal').setStyle(ButtonStyle.Danger)
-    );
+    try {
+        const buffer = await renderImage(session, true);
+        const previewAttachment = new AttachmentBuilder(buffer, { name: 'preview.png' });
+        const embed = new EmbedBuilder().setTitle('🎛️ STUDIO INTERAKTIF SSRP').setDescription('⚠️ *Preview dioptimalkan otomatis. Hasil akhir (Finishing) tetap Ultra HD.*').setColor(0xFFA500).setImage('attachment://preview.png');
+        
+        const rowPan = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('pan_left').setEmoji('⬅️').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('pan_up').setEmoji('⬆️').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('pan_down').setEmoji('⬇️').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('pan_right').setEmoji('➡️').setStyle(ButtonStyle.Secondary)
+        );
+        const rowZoom = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('zoom_in').setLabel('Zoom In').setEmoji('⏺️').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('zoom_out').setLabel('Zoom Out').setEmoji('🔽').setStyle(ButtonStyle.Primary)
+        );
+        const rowFilter = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder().setCustomId('select_filter').setPlaceholder('🎨 Pilih Filter Warna Foto...').addOptions([
+                { label: 'Original', value: 'original' }, { label: 'Cerah (HDR)', value: 'vibrant' },
+                { label: 'Gelap (Cinematic)', value: 'dark' }, { label: 'Hitam Putih (Vintage)', value: 'grayscale' }
+            ])
+        );
+        const rowAction = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('btn_finishing').setLabel('🚀 FINISHING (BUAT SSRP HD)').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('btn_cancel').setLabel('Batal').setStyle(ButtonStyle.Danger)
+        );
 
-    const payload = { content: '', embeds: [embed], components: [rowPan, rowZoom, rowFilter, rowAction], files: [previewAttachment] };
-    if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
-    else await interaction.update(payload);
+        const payload = { content: '', embeds: [embed], components: [rowPan, rowZoom, rowFilter, rowAction], files: [previewAttachment] };
+        if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
+        else await interaction.update(payload);
+    } catch (error) {
+        console.error(error);
+        const errPayload = { content: '⚠️ Gagal me-render preview gambar. Coba upload ulang foto mentahnya.', embeds: [], components: [] };
+        if (interaction.deferred || interaction.replied) await interaction.editReply(errPayload);
+        else await interaction.reply(errPayload);
+    }
 }
 
 // --- MAIN LISTENER ---
@@ -444,7 +445,6 @@ client.on('interactionCreate', async (interaction) => {
         if (interaction.customId === 'btn_cancel') {
             let activeSession = userSessions.get(interaction.user.id);
             if (activeSession) {
-                activeSession.previewBuffer = null;
                 activeSession.imageBuffer = null;
             }
             userSessions.delete(interaction.user.id);
@@ -476,39 +476,42 @@ client.on('interactionCreate', async (interaction) => {
 
             collector.on('collect', async (msg) => {
                 await msg.channel.sendTyping();
-                const attachment = msg.attachments.first();
                 
-                await msg.delete().catch(() => {});
-                await interaction.deleteReply().catch(() => {});
-                await interaction.message.delete().catch(() => {});
+                try {
+                    const attachment = msg.attachments.first();
+                    
+                    await msg.delete().catch(() => {});
+                    await interaction.deleteReply().catch(() => {});
+                    await interaction.message.delete().catch(() => {});
 
-                let optimizedUrl = attachment.url.replace('cdn.discordapp.com', 'media.discordapp.net');
-                optimizedUrl = `${optimizedUrl}?width=1280&height=960`;
+                    // PENANGANAN ERROR DOWNLOAD GAMBAR (Mencegah buffer kosong/crash)
+                    const origRes = await fetch(attachment.url);
+                    if (!origRes.ok) throw new Error("Gagal mengunduh gambar dari Discord.");
+                    
+                    const origBuf = await origRes.arrayBuffer();
+                    session.imageBuffer = Buffer.from(origBuf);
 
-                const previewRes = await fetch(optimizedUrl);
-                const previewBuf = await previewRes.arrayBuffer();
-                session.previewBuffer = Buffer.from(previewBuf);
+                    const metadata = await sharp(session.imageBuffer).metadata();
+                    const origW = metadata.width; 
+                    const origH = metadata.height;
 
-                const origRes = await fetch(attachment.url);
-                const origBuf = await origRes.arrayBuffer();
-                session.imageBuffer = Buffer.from(origBuf);
+                    let vpW = Math.min(origW, Math.floor(origH * (800/600)));
+                    let vpH = Math.floor(vpW * (600/800));
+                    let vpX = Math.floor((origW - vpW) / 2);
+                    let vpY = Math.floor((origH - vpH) / 2);
 
-                const metadata = await sharp(session.imageBuffer).metadata();
-                const origW = metadata.width; 
-                const origH = metadata.height;
+                    session.origW = origW; session.origH = origH;
+                    session.vpX = vpX; session.vpY = vpY;
+                    session.vpW = vpW; session.vpH = vpH;
+                    session.filter = 'original';
 
-                let vpW = Math.min(origW, Math.floor(origH * (800/600)));
-                let vpH = Math.floor(vpW * (600/800));
-                let vpX = Math.floor((origW - vpW) / 2);
-                let vpY = Math.floor((origH - vpH) / 2);
+                    userSessions.set(interaction.user.id, session);
+                    await updateStudioUI(interaction, session);
 
-                session.origW = origW; session.origH = origH;
-                session.vpX = vpX; session.vpY = vpY;
-                session.vpW = vpW; session.vpH = vpH;
-                session.filter = 'original';
-
-                userSessions.set(interaction.user.id, session);
-                await updateStudioUI(interaction, session);
+                } catch (error) {
+                    console.error("Gagal saat memproses upload:", error);
+                    await msg.channel.send(`⚠️ Terjadi kendala saat memproses gambar: \`${error.message}\`. Silakan klik upload ulang.`);
+                }
             });
             return;
         }
@@ -554,11 +557,9 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.message.delete().catch(() => {});
                 await interaction.channel.send({ content: `✅ **Selesai!** Ini hasil SSRP Ultra HD jernih kamu, <@${interaction.user.id}> 📸✨`, files: [resultAttachment] });
                 
-                // Bersihkan memori agar tidak OOM
                 let activeSession = userSessions.get(interaction.user.id);
                 if (activeSession) {
                     activeSession.imageBuffer = null;
-                    activeSession.previewBuffer = null;
                 }
                 userSessions.delete(interaction.user.id);
             } catch (err) {
