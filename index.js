@@ -24,23 +24,53 @@ const client = new Client({
     ],
 });
 
-// --- SISTEM MULTI-API KEY ROTATION (ANTI-LIMIT) ---
+// --- SISTEM HYBRID MULTI-API KEY (GEMINI + GROQ FALLBACK) ---
 const apiKeys = [
     process.env.GEMINI_API_KEY,
     process.env.GEMINI_API_KEY_2,
     process.env.GEMINI_API_KEY_3
-].filter(Boolean); // Hanya ambil key yang terisi di Railway
+].filter(Boolean);
 
-let currentKeyIndex = 0;
+async function getAIResponse(prompt) {
+    // 1. Coba gunakan Gemini secara bergantian
+    for (let i = 0; i < apiKeys.length; i++) {
+        try {
+            const genAI = new GoogleGenerativeAI(apiKeys[i]);
+            // Menggunakan versi gemini yang resmi dan stabil
+            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            const result = await model.generateContent(prompt);
+            return result.response.text();
+        } catch (error) {
+            console.warn(`Gemini Key ke-${i+1} gagal/limit.`);
+            continue; // Lanjut ke key berikutnya
+        }
+    }
 
-function getNextGenerativeModel() {
-    if (apiKeys.length === 0) throw new Error("Tidak ada API Key Gemini yang terdeteksi di Environment Variables!");
-    const activeKey = apiKeys[currentKeyIndex];
-    const genAI = new GoogleGenerativeAI(activeKey);
-    // Rotasi index ke key berikutnya untuk panggilan selanjutnya
-    currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
-    // MENGGUNAKAN VERSI MODEL TERBARU SESUAI PERINTAH GOOGLE
-    return genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
+    // 2. Jika semua Gemini limit, OTOMATIS pindah ke Groq API
+    if (process.env.GROQ_API_KEY) {
+        try {
+            console.log("Menggunakan Groq API sebagai cadangan...");
+            const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    model: "llama3-8b-8192", // Model groq super cepat
+                    messages: [{role: "user", content: prompt}]
+                })
+            });
+            const data = await response.json();
+            if (data.choices && data.choices.length > 0) {
+                return data.choices[0].message.content;
+            }
+        } catch(e) {
+            console.warn(`Groq API juga gagal: ${e.message}`);
+        }
+    }
+
+    throw new Error("Semua AI (Gemini & Groq) Limit/Error. Tambahkan API Key cadangan di Railway!");
 }
 
 const CREATOR_ID = '1179808811494690889';
@@ -63,31 +93,14 @@ function saveActiveChannels(channelsSet) {
 }
 const activeChannels = loadActiveChannels();
 
-client.once('clientReady', () => console.log(`Bot Velocity Elite Club (AI v3.8 Multi-Key & SSRP Sharp-Engine) online! Total API Key aktif: ${apiKeys.length}`));
-
-async function generateWithRetry(chatPrompt, maxRetries = 3) {
-    for (let i = 0; i < maxRetries; i++) {
-        try {
-            const model = getNextGenerativeModel();
-            const result = await model.generateContent(chatPrompt);
-            return await result.response;
-        } catch (error) {
-            console.warn(`Percobaan AI ke-${i+1} gagal (Kemungkinan limit/sibuk):`, error.message);
-            if ((error.message.includes('503') || error.message.includes('429')) && i < maxRetries - 1) {
-                await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
-                continue;
-            }
-            if (i === maxRetries - 1) throw error;
-        }
-    }
-}
+client.once('clientReady', () => console.log(`Bot Velocity Elite Club (Hybrid AI & SSRP Sharp-Engine) online!`));
 
 function getCleanName(displayName) {
     if (displayName.includes('||')) return displayName.split('||').pop().trim();
     return displayName.trim();
 }
 
-// --- FUNGSI RENDER GAMBAR SSRP (SUPER RINGAN & FIX FONT KOTAK) ---
+// --- FUNGSI RENDER GAMBAR SSRP (FIX FONT KOTAK & MIRIP SAMP ASLI) ---
 async function renderImage(session, isPreview = true) {
     let sourceBuffer = session.imageBuffer;
     
@@ -122,7 +135,7 @@ async function renderImage(session, isPreview = true) {
         const marginX = Math.floor(25 * scale);
         const marginBottom = Math.floor(25 * scale);
         const fontSize = Math.floor(16 * scale);
-        const strokeWidth = Math.max(1, Math.floor(2 * scale));
+        const strokeWidth = Math.max(2, Math.floor(3 * scale)); // Outline lebih tebal
 
         const yPositions = {
             'top-left': marginBottom + Math.floor(15 * scale),
@@ -147,7 +160,8 @@ async function renderImage(session, isPreview = true) {
                 const textAnchor = pos.includes('right') ? 'end' : 'start';
                 const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
                 
-                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="sans-serif" font-size="${fontSize}" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" paint-order="stroke" text-anchor="${textAnchor}">${safeLine}</text>\n`;
+                // MENGGUNAKAN FONT DEJAVU SANS (DARI NIXPACKS) DAN PAINT-ORDER AGAR GARIS HITAM DI BELAKANG TEKS
+                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="DejaVu Sans, Arial, sans-serif" font-size="${fontSize}" font-weight="900" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill" text-anchor="${textAnchor}">${safeLine}</text>\n`;
             });
         }
 
@@ -330,20 +344,15 @@ client.on('messageCreate', async (message) => {
         const sys = `Teman nongkrong asik Velocity Elite Club. Panggil nama akrab user (sebelum titik dua). Jangan panggil V-CEO atau pakai ||. Sifat: Santai, gaul (lu/gw), ceplas-ceplos. Creator: ID ${CREATOR_ID}.`;
         const chatPrompt = `${sys}\n\n=== RIWAYAT ===\n${memory.join('\n')}\n\nBalas natural!`;
         
-        const response = await generateWithRetry(chatPrompt);
-        const replyText = response.text().slice(0, 2000);
-        memory.push(`Bot: ${replyText}`);
+        // Menggunakan sistem Hybrid AI (Anti-Limit)
+        const replyText = await getAIResponse(chatPrompt);
+        const finalReply = replyText.slice(0, 2000);
+        memory.push(`Bot: ${finalReply}`);
         aiMemories.set(channelId, memory);
-        await message.reply(replyText);
+        await message.reply(finalReply);
     } catch (error) {
         console.error("AI Error:", error);
-        if (error.message.includes('503')) {
-            await message.reply('Otak AI gw lagi pusing (Server Sibuk) 🥵.');
-        } else if (error.message.includes('429') || error.message.includes('ResourceExhausted')) {
-            await message.reply('Waduh semua API Key Gemini gw lagi limit/habis kuotanya. Coba tambahin API Key cadangan di Railway, Boss! ☕');
-        } else {
-            await message.reply(`Gagal memproses pesan AI: \`${error.message}\``);
-        }
+        await message.reply(`Gagal memproses pesan AI: \`${error.message}\``);
     }
 });
 
@@ -401,10 +410,11 @@ client.on('interactionCreate', async (interaction) => {
                             const prompt = `Filter chatlog SA-MP ini. Hanya ambil baris berbahasa ${langName} dan baris aksi (*). Jangan ubah format, cukup hapus baris obrolan yang beda bahasa. Teks:\n${cleanedLines.join('\n')}`;
 
                             try {
-                                const aiRes = await generateWithRetry(prompt);
-                                finalTexts = aiRes.text().split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                                // Filter AI menggunakan sistem Hybrid Anti-Limit
+                                const aiResult = await getAIResponse(prompt);
+                                finalTexts = aiResult.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                             } catch (e) {
-                                await msg.channel.send('⚠️ Filter AI gagal (Limit/Sibuk), menampilkan semua bahasa.');
+                                await msg.channel.send(`⚠️ Filter AI gagal (${e.message}), menampilkan semua bahasa.`);
                             }
                             await waitMsg.delete().catch(() => {});
                         }
