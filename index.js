@@ -67,7 +67,7 @@ function getCleanName(displayName) {
     return displayName.trim();
 }
 
-// --- FUNGSI RENDER GAMBAR SSRP (SUPER RINGAN & PRESISI) ---
+// --- FUNGSI RENDER GAMBAR SSRP (SUPER RINGAN & FIX FONT KOTAK) ---
 async function renderImage(session, isPreview = true) {
     let sourceBuffer = session.imageBuffer;
     
@@ -98,7 +98,7 @@ async function renderImage(session, isPreview = true) {
 
     if (session.blocks.length > 0) {
         let svgTexts = '';
-        // Skalakan ukuran teks otomatis jika sedang dalam mode preview agar posisinya pas
+        // Skalakan ukuran teks otomatis jika sedang dalam mode preview
         const scale = isPreview ? 0.5 : 1.0;
         const lineHeight = Math.floor(22 * scale);
         const marginX = Math.floor(25 * scale);
@@ -129,11 +129,11 @@ async function renderImage(session, isPreview = true) {
                 const textAnchor = pos.includes('right') ? 'end' : 'start';
                 const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
                 
-                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" paint-order="stroke" text-anchor="${textAnchor}">${safeLine}</text>\n`;
+                // MENGGUNAKAN font-family="sans-serif" AGAR TIDAK KOTAK-KOTAK DI RAILWAY
+                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="sans-serif" font-size="${fontSize}" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" paint-order="stroke" text-anchor="${textAnchor}">${safeLine}</text>\n`;
             });
         }
 
-        // Ukuran SVG disamakan persis dengan targetW dan targetH agar tidak terjadi error dimensi
         const svgImage = `<svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">${svgTexts}</svg>`;
         const svgBuffer = Buffer.from(svgImage);
         imageObj = imageObj.composite([{ input: svgBuffer, blend: 'over' }]);
@@ -306,7 +306,7 @@ client.on('messageCreate', async (message) => {
         await message.channel.sendTyping();
         let memory = aiMemories.get(channelId) || [];
         const cleanName = getCleanName(message.member ? message.member.displayName : message.author.username);
-        memory.push(`${cleanName}: ${promptText}`);
+        memory.push(`${cleanName}:${promptText}`);
         if (memory.length > 10) memory.shift(); 
         aiMemories.set(channelId, memory);
 
@@ -320,8 +320,15 @@ client.on('messageCreate', async (message) => {
         aiMemories.set(channelId, memory);
         await message.reply(replyText);
     } catch (error) {
-        if (error.message.includes('503')) await message.reply('Otak AI gw lagi pusing (Server Sibuk) 🥵.');
-        else if (error.message.includes('429')) await message.reply('Waduh gw lagi ditanya banyak orang nih (Limit). Santai sebat dulu ☕');
+        console.error("AI Error:", error);
+        // FIX: Supaya AI tidak cuma "typing" tanpa balasan kalau error
+        if (error.message.includes('503')) {
+            await message.reply('Otak AI gw lagi pusing (Server Sibuk) 🥵.');
+        } else if (error.message.includes('429')) {
+            await message.reply('Waduh gw lagi ditanya banyak orang nih (Limit atau Kuota API Key Habis). Cek key lu, Boss! ☕');
+        } else {
+            await message.reply(`Gagal memproses pesan AI: \`${error.message}\``);
+        }
     }
 });
 
