@@ -24,7 +24,24 @@ const client = new Client({
     ],
 });
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// --- SISTEM MULTI-API KEY ROTATION (ANTI-LIMIT) ---
+const apiKeys = [
+    process.env.GEMINI_API_KEY,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY_3
+].filter(Boolean); // Hanya ambil key yang terisi di Railway
+
+let currentKeyIndex = 0;
+
+function getNextGenerativeModel() {
+    if (apiKeys.length === 0) throw new Error("Tidak ada API Key Gemini yang terdeteksi di Environment Variables!");
+    const activeKey = apiKeys[currentKeyIndex];
+    const genAI = new GoogleGenerativeAI(activeKey);
+    // Rotasi index ke key berikutnya untuk panggilan selanjutnya
+    currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
+    return genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+}
+
 const CREATOR_ID = '1179808811494690889';
 const ALLOWED_ROLE_ID = '1553818141157757109';
 
@@ -45,19 +62,21 @@ function saveActiveChannels(channelsSet) {
 }
 const activeChannels = loadActiveChannels();
 
-client.once('clientReady', () => console.log(`Bot Velocity Elite Club (AI & SSRP Sharp-Engine Optimized) online!`));
+client.once('clientReady', () => console.log(`Bot Velocity Elite Club (AI Multi-Key & SSRP Sharp-Engine) online! Total API Key aktif: ${apiKeys.length}`));
 
-async function generateWithRetry(model, chatPrompt, maxRetries = 3) {
+async function generateWithRetry(chatPrompt, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
         try {
+            const model = getNextGenerativeModel();
             const result = await model.generateContent(chatPrompt);
             return await result.response;
         } catch (error) {
-            if (error.message.includes('503') && i < maxRetries - 1) {
+            console.warn(`Percobaan AI ke-${i+1} gagal (Kemungkinan limit/sibuk):`, error.message);
+            if ((error.message.includes('503') || error.message.includes('429')) && i < maxRetries - 1) {
                 await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
                 continue;
             }
-            throw error;
+            if (i === maxRetries - 1) throw error;
         }
     }
 }
@@ -71,7 +90,6 @@ function getCleanName(displayName) {
 async function renderImage(session, isPreview = true) {
     let sourceBuffer = session.imageBuffer;
     
-    // Tentukan dimensi target berdasarkan mode (Preview 400x300 atau Finishing 800x600)
     let targetW = isPreview ? 400 : 800;
     let targetH = isPreview ? 300 : 600;
 
@@ -98,7 +116,6 @@ async function renderImage(session, isPreview = true) {
 
     if (session.blocks.length > 0) {
         let svgTexts = '';
-        // Skalakan ukuran teks otomatis jika sedang dalam mode preview
         const scale = isPreview ? 0.5 : 1.0;
         const lineHeight = Math.floor(22 * scale);
         const marginX = Math.floor(25 * scale);
@@ -129,7 +146,6 @@ async function renderImage(session, isPreview = true) {
                 const textAnchor = pos.includes('right') ? 'end' : 'start';
                 const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
                 
-                // MENGGUNAKAN font-family="sans-serif" AGAR TIDAK KOTAK-KOTAK DI RAILWAY
                 svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="sans-serif" font-size="${fontSize}" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" paint-order="stroke" text-anchor="${textAnchor}">${safeLine}</text>\n`;
             });
         }
@@ -310,22 +326,20 @@ client.on('messageCreate', async (message) => {
         if (memory.length > 10) memory.shift(); 
         aiMemories.set(channelId, memory);
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
         const sys = `Teman nongkrong asik Velocity Elite Club. Panggil nama akrab user (sebelum titik dua). Jangan panggil V-CEO atau pakai ||. Sifat: Santai, gaul (lu/gw), ceplas-ceplos. Creator: ID ${CREATOR_ID}.`;
         const chatPrompt = `${sys}\n\n=== RIWAYAT ===\n${memory.join('\n')}\n\nBalas natural!`;
         
-        const response = await generateWithRetry(model, chatPrompt);
+        const response = await generateWithRetry(chatPrompt);
         const replyText = response.text().slice(0, 2000);
         memory.push(`Bot: ${replyText}`);
         aiMemories.set(channelId, memory);
         await message.reply(replyText);
     } catch (error) {
         console.error("AI Error:", error);
-        // FIX: Supaya AI tidak cuma "typing" tanpa balasan kalau error
         if (error.message.includes('503')) {
             await message.reply('Otak AI gw lagi pusing (Server Sibuk) 🥵.');
-        } else if (error.message.includes('429')) {
-            await message.reply('Waduh gw lagi ditanya banyak orang nih (Limit atau Kuota API Key Habis). Cek key lu, Boss! ☕');
+        } else if (error.message.includes('429') || error.message.includes('ResourceExhausted')) {
+            await message.reply('Waduh semua API Key Gemini gw lagi limit/habis kuotanya. Coba tambahin API Key cadangan di Railway, Boss! ☕');
         } else {
             await message.reply(`Gagal memproses pesan AI: \`${error.message}\``);
         }
@@ -381,16 +395,15 @@ client.on('interactionCreate', async (interaction) => {
 
                         if (clSession.lang !== 'all') {
                             const waitMsg = await msg.channel.send('⏳ *AI sedang menyeleksi bahasa chatlog kamu...*');
-                            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
                             const langName = clSession.lang === 'id' ? 'Indonesia' : 'Inggris';
                             
                             const prompt = `Filter chatlog SA-MP ini. Hanya ambil baris berbahasa ${langName} dan baris aksi (*). Jangan ubah format, cukup hapus baris obrolan yang beda bahasa. Teks:\n${cleanedLines.join('\n')}`;
 
                             try {
-                                const aiRes = await generateWithRetry(model, prompt);
+                                const aiRes = await generateWithRetry(prompt);
                                 finalTexts = aiRes.text().split('\n').map(l => l.trim()).filter(l => l.length > 0);
                             } catch (e) {
-                                await msg.channel.send('⚠️ Filter AI gagal (Server Sibuk), menampilkan semua bahasa.');
+                                await msg.channel.send('⚠️ Filter AI gagal (Limit/Sibuk), menampilkan semua bahasa.');
                             }
                             await waitMsg.delete().catch(() => {});
                         }
