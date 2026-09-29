@@ -39,8 +39,8 @@ async function getAIResponse(prompt) {
     for (let i = 0; i < apiKeys.length; i++) {
         try {
             const genAI = new GoogleGenerativeAI(apiKeys[i]);
-            // FIX ERROR 404: Menggunakan nama model terbaru yang valid
-            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+            // FIX: Menggunakan model resmi gemini-1.5-flash yang valid
+            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
             const result = await model.generateContent(prompt);
             return result.response.text();
         } catch (error) {
@@ -61,8 +61,8 @@ async function getAIResponse(prompt) {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    // FIX ERROR 400: Menggunakan model Groq yang masih aktif
-                    model: "mixtral-8x7b-32768", 
+                    // FIX: Menggunakan model Groq terbaru yang aktif (llama-3.1-8b-instant)
+                    model: "llama-3.1-8b-instant", 
                     messages: [{role: "user", content: prompt}]
                 })
             });
@@ -92,8 +92,6 @@ const userSessions = new Map();
 const chatlogSessions = new Map(); 
 const aiMemories = new Map(); 
 const channelFilePath = path.join(process.cwd(), 'active_channels.json');
-// FIX LOKASI FONT: Menggunakan process.cwd() agar akurat di server Railway
-const fontFilePath = path.join(process.cwd(), 'arial.ttf'); 
 
 function loadActiveChannels() {
     try { if (fs.existsSync(channelFilePath)) return new Set(JSON.parse(fs.readFileSync(channelFilePath, 'utf8'))); } 
@@ -107,12 +105,7 @@ function saveActiveChannels(channelsSet) {
 const activeChannels = loadActiveChannels();
 
 client.once('clientReady', () => {
-    console.log(`Bot Velocity Elite Club (Hybrid v1.5 & Thread Chatlogs) online!`);
-    if (!fs.existsSync(fontFilePath)) {
-        console.warn("⚠️ PERINGATAN: File 'arial.ttf' tidak ditemukan di root directory!");
-    } else {
-        console.log("✅ File font 'arial.ttf' ditemukan. SSRP aman dari kotak-kotak.");
-    }
+    console.log(`Bot Velocity Elite Club (Hybrid AI & Thread Fixed) online!`);
 });
 
 function getCleanName(displayName) {
@@ -120,7 +113,7 @@ function getCleanName(displayName) {
     return displayName.trim();
 }
 
-// --- FUNGSI RENDER GAMBAR SSRP (FIX FONT KOTAK) ---
+// --- FUNGSI RENDER GAMBAR SSRP (FIX FONT KOTAK MENGGUNAKAN DEJAVU SANS LINUX) ---
 async function renderImage(session, isPreview = true) {
     let sourceBuffer = session.imageBuffer;
     
@@ -180,22 +173,12 @@ async function renderImage(session, isPreview = true) {
                 const textAnchor = pos.includes('right') ? 'end' : 'start';
                 const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
                 
-                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="CustomFont, Arial, sans-serif" font-size="${fontSize}" font-weight="900" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill" text-anchor="${textAnchor}">${safeLine}</text>\n`;
+                // Menggunakan DejaVu Sans yang pasti ada di Linux/Railway agar tidak kotak-kotak
+                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="DejaVu Sans, Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill" text-anchor="${textAnchor}">${safeLine}</text>\n`;
             });
         }
 
-        let fontBase64 = "";
-        try {
-             if (fs.existsSync(fontFilePath)) {
-                 const fontBuffer = fs.readFileSync(fontFilePath);
-                 fontBase64 = fontBuffer.toString('base64');
-             }
-        } catch(e) {}
-
-        // Wajib menggunakan data URI base64 agar sharp/librsvg bisa ngebaca fontnya
-        const fontFaceStr = fontBase64 ? `<defs><style>@font-face { font-family: "CustomFont"; src: url("data:font/truetype;charset=utf-8;base64,${fontBase64}") format("truetype"); }</style></defs>` : '';
-
-        const svgImage = `<svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">${fontFaceStr}${svgTexts}</svg>`;
+        const svgImage = `<svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">${svgTexts}</svg>`;
         const svgBuffer = Buffer.from(svgImage);
         imageObj = imageObj.composite([{ input: svgBuffer, blend: 'over' }]);
     }
@@ -447,7 +430,7 @@ client.on('interactionCreate', async (interaction) => {
                             await waitMsg.delete().catch(() => {});
                         }
                         
-                        // FITUR THREAD (UTAS) UNTUK CHATLOGS
+                        // FITUR THREAD (UTAS) OTOMATIS
                         const replyMsg = await msg.channel.send(`✅ **Ekstraksi Selesai!** (${clSession.lines} baris per blok). Membuka thread untuk hasilnya...`);
                         
                         const thread = await msg.channel.threads.create({
