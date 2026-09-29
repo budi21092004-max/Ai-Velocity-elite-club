@@ -45,7 +45,6 @@ function saveActiveChannels(channelsSet) {
 }
 const activeChannels = loadActiveChannels();
 
-// Ubah event ready ke clientReady agar warning hilang
 client.once('clientReady', () => console.log(`Bot Velocity Elite Club (AI & SSRP Sharp-Engine) online!`));
 
 async function generateWithRetry(model, chatPrompt, maxRetries = 3) {
@@ -218,7 +217,7 @@ async function updateStudioUI(interaction, session) {
         else await interaction.update(payload);
     } catch (error) {
         console.error(error);
-        const errPayload = { content: '⚠️ Gagal me-render preview gambar. Coba upload ulang foto mentahnya.', embeds: [], components: [] };
+        const errPayload = { content: '⚠️ Gagal me-render preview gambar. Coba batalkan dan mulai ulang.', embeds: [], components: [] };
         if (interaction.deferred || interaction.replied) await interaction.editReply(errPayload);
         else await interaction.reply(errPayload);
     }
@@ -480,16 +479,20 @@ client.on('interactionCreate', async (interaction) => {
                 try {
                     const attachment = msg.attachments.first();
                     
-                    await msg.delete().catch(() => {});
-                    await interaction.deleteReply().catch(() => {});
-                    await interaction.message.delete().catch(() => {});
-
-                    // PENANGANAN ERROR DOWNLOAD GAMBAR (Mencegah buffer kosong/crash)
-                    const origRes = await fetch(attachment.url);
-                    if (!origRes.ok) throw new Error("Gagal mengunduh gambar dari Discord.");
+                    // FETCH DULUAN: Ditambah headers User-Agent biar gak diblokir Discord
+                    const origRes = await fetch(attachment.url, {
+                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+                    });
+                    
+                    if (!origRes.ok) throw new Error(`HTTP ${origRes.status}: Gagal mengunduh dari CDN Discord`);
                     
                     const origBuf = await origRes.arrayBuffer();
                     session.imageBuffer = Buffer.from(origBuf);
+
+                    // KALAU SUKSES, BARU HAPUS PESAN DAN TOMBOL LAMA
+                    await msg.delete().catch(() => {});
+                    await interaction.deleteReply().catch(() => {});
+                    await interaction.message.delete().catch(() => {});
 
                     const metadata = await sharp(session.imageBuffer).metadata();
                     const origW = metadata.width; 
@@ -510,7 +513,8 @@ client.on('interactionCreate', async (interaction) => {
 
                 } catch (error) {
                     console.error("Gagal saat memproses upload:", error);
-                    await msg.channel.send(`⚠️ Terjadi kendala saat memproses gambar: \`${error.message}\`. Silakan klik upload ulang.`);
+                    // Karena error, pesan tombol TIDAK dihapus. Jadi user bisa langsung klik lagi.
+                    await msg.channel.send(`⚠️ Terjadi kendala saat memproses gambar: \`${error.message}\`. Tombol panel masih ada di atas, silakan klik **Upload Foto Mentah** lagi!`);
                 }
             });
             return;
