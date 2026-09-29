@@ -39,7 +39,8 @@ function getNextGenerativeModel() {
     const genAI = new GoogleGenerativeAI(activeKey);
     // Rotasi index ke key berikutnya untuk panggilan selanjutnya
     currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
-    return genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    // MENGGUNAKAN VERSI MODEL TERBARU SESUAI PERINTAH GOOGLE
+    return genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
 }
 
 const CREATOR_ID = '1179808811494690889';
@@ -62,7 +63,7 @@ function saveActiveChannels(channelsSet) {
 }
 const activeChannels = loadActiveChannels();
 
-client.once('clientReady', () => console.log(`Bot Velocity Elite Club (AI Multi-Key & SSRP Sharp-Engine) online! Total API Key aktif: ${apiKeys.length}`));
+client.once('clientReady', () => console.log(`Bot Velocity Elite Club (AI v3.8 Multi-Key & SSRP Sharp-Engine) online! Total API Key aktif: ${apiKeys.length}`));
 
 async function generateWithRetry(chatPrompt, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
