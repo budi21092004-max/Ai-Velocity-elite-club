@@ -120,14 +120,15 @@ async function renderImage(session, isPreview = true) {
         lines.forEach((line, i) => {
             const fillCol = line.startsWith('*') ? '#C2A2DA' : '#FFFFFF';
             const textAnchor = pos.includes('right') ? 'end' : 'start';
-            const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
             
             svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="2" paint-order="stroke" text-anchor="${textAnchor}">${safeLine}</text>\n`;
         });
     }
 
     if (session.blocks.length > 0) {
-        const svgImage = `<svg width="${canvasWidth}" height="${canvasHeight}">${svgTexts}</svg>`;
+        // PENAMBAHAN WAJIB xmlns AGAR SHARP TIDAK CRASH SAAT MEMBACA SVG
+        const svgImage = `<svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">${svgTexts}</svg>`;
         const svgBuffer = Buffer.from(svgImage);
         imageObj = imageObj.composite([{ input: svgBuffer, blend: 'over' }]);
     }
@@ -217,7 +218,8 @@ async function updateStudioUI(interaction, session) {
         else await interaction.update(payload);
     } catch (error) {
         console.error(error);
-        const errPayload = { content: '⚠️ Gagal me-render preview gambar. Coba batalkan dan mulai ulang.', embeds: [], components: [] };
+        // Menampilkan pesan error asli jika masih terjadi kegagalan
+        const errPayload = { content: `⚠️ Gagal me-render preview gambar: \`${error.message}\`\nSilakan hapus pesan ini dan mulai ulang dengan \`!ssrp\`.`, embeds: [], components: [] };
         if (interaction.deferred || interaction.replied) await interaction.editReply(errPayload);
         else await interaction.reply(errPayload);
     }
@@ -353,8 +355,6 @@ client.on('interactionCreate', async (interaction) => {
                         const response = await fetch(attachment.url);
                         const textData = await response.text();
 
-                        // Fitur hapus otomatis dihilangkan di sini
-
                         let lines = textData.split('\n');
                         let cleanedLines = [];
 
@@ -486,8 +486,6 @@ client.on('interactionCreate', async (interaction) => {
                     
                     const origBuf = await origRes.arrayBuffer();
                     session.imageBuffer = Buffer.from(origBuf);
-
-                    // Fitur hapus otomatis (msg.delete, interaction.deleteReply, interaction.message.delete) dihilangkan di sini
 
                     const metadata = await sharp(session.imageBuffer).metadata();
                     const origW = metadata.width; 
