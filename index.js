@@ -45,7 +45,7 @@ function saveActiveChannels(channelsSet) {
 }
 const activeChannels = loadActiveChannels();
 
-client.once('clientReady', () => console.log(`Bot Velocity Elite Club (AI & SSRP Sharp-Engine) online!`));
+client.once('clientReady', () => console.log(`Bot Velocity Elite Club (AI & SSRP Sharp-Engine Optimized) online!`));
 
 async function generateWithRetry(model, chatPrompt, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
@@ -67,16 +67,20 @@ function getCleanName(displayName) {
     return displayName.trim();
 }
 
-// --- FUNGSI RENDER GAMBAR SSRP (SHARP ENGINE) ---
+// --- FUNGSI RENDER GAMBAR SSRP (SUPER RINGAN & PRESISI) ---
 async function renderImage(session, isPreview = true) {
     let sourceBuffer = session.imageBuffer;
     
+    // Tentukan dimensi target berdasarkan mode (Preview 400x300 atau Finishing 800x600)
+    let targetW = isPreview ? 400 : 800;
+    let targetH = isPreview ? 300 : 600;
+
     let imageObj = sharp(sourceBuffer).extract({ 
         left: session.vpX, 
         top: session.vpY, 
         width: session.vpW, 
         height: session.vpH 
-    }).resize(800, 600); 
+    }).resize(targetW, targetH); 
 
     switch (session.filter) {
         case 'grayscale': 
@@ -92,49 +96,47 @@ async function renderImage(session, isPreview = true) {
             break;
     }
 
-    let svgTexts = '';
-    const lineHeight = 22;
-    const marginX = 25;
-    const marginBottom = 25;
-    const canvasWidth = 800;
-    const canvasHeight = 600;
+    if (session.blocks.length > 0) {
+        let svgTexts = '';
+        // Skalakan ukuran teks otomatis jika sedang dalam mode preview agar posisinya pas
+        const scale = isPreview ? 0.5 : 1.0;
+        const lineHeight = Math.floor(22 * scale);
+        const marginX = Math.floor(25 * scale);
+        const marginBottom = Math.floor(25 * scale);
+        const fontSize = Math.floor(16 * scale);
+        const strokeWidth = Math.max(1, Math.floor(2 * scale));
 
-    const yPositions = {
-        'top-left': marginBottom + 15,
-        'bottom-left': canvasHeight - marginBottom,
-        'top-right': marginBottom + 15,
-        'bottom-right': canvasHeight - marginBottom
-    };
+        const yPositions = {
+            'top-left': marginBottom + Math.floor(15 * scale),
+            'bottom-left': targetH - marginBottom,
+            'top-right': marginBottom + Math.floor(15 * scale),
+            'bottom-right': targetH - marginBottom
+        };
 
-    for (const block of session.blocks) {
-        const pos = block.pos;
-        const lines = block.text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        let yStart = yPositions[pos] ?? marginBottom;
+        for (const block of session.blocks) {
+            const pos = block.pos;
+            const lines = block.text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            let yStart = yPositions[pos] ?? marginBottom;
 
-        if (pos.includes('bottom')) {
-            yStart -= (lines.length * lineHeight);
+            if (pos.includes('bottom')) {
+                yStart -= (lines.length * lineHeight);
+            }
+
+            const xStart = pos.includes('right') ? targetW - marginX : marginX;
+            
+            lines.forEach((line, i) => {
+                const fillCol = line.startsWith('*') ? '#C2A2DA' : '#FFFFFF';
+                const textAnchor = pos.includes('right') ? 'end' : 'start';
+                const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+                
+                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" paint-order="stroke" text-anchor="${textAnchor}">${safeLine}</text>\n`;
+            });
         }
 
-        const xStart = pos.includes('right') ? canvasWidth - marginX : marginX;
-        
-        lines.forEach((line, i) => {
-            const fillCol = line.startsWith('*') ? '#C2A2DA' : '#FFFFFF';
-            const textAnchor = pos.includes('right') ? 'end' : 'start';
-            const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
-            
-            svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="2" paint-order="stroke" text-anchor="${textAnchor}">${safeLine}</text>\n`;
-        });
-    }
-
-    if (session.blocks.length > 0) {
-        // PENAMBAHAN WAJIB xmlns AGAR SHARP TIDAK CRASH SAAT MEMBACA SVG
-        const svgImage = `<svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">${svgTexts}</svg>`;
+        // Ukuran SVG disamakan persis dengan targetW dan targetH agar tidak terjadi error dimensi
+        const svgImage = `<svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">${svgTexts}</svg>`;
         const svgBuffer = Buffer.from(svgImage);
         imageObj = imageObj.composite([{ input: svgBuffer, blend: 'over' }]);
-    }
-
-    if (isPreview) {
-        imageObj = imageObj.resize(400, 300);
     }
 
     return await imageObj.png({ quality: isPreview ? 70 : 100 }).toBuffer();
@@ -218,8 +220,7 @@ async function updateStudioUI(interaction, session) {
         else await interaction.update(payload);
     } catch (error) {
         console.error(error);
-        // Menampilkan pesan error asli jika masih terjadi kegagalan
-        const errPayload = { content: `⚠️ Gagal me-render preview gambar: \`${error.message}\`\nSilakan hapus pesan ini dan mulai ulang dengan \`!ssrp\`.`, embeds: [], components: [] };
+        const errPayload = { content: `⚠️ Gagal me-render preview gambar: \`${error.message}\``, embeds: [], components: [] };
         if (interaction.deferred || interaction.replied) await interaction.editReply(errPayload);
         else await interaction.reply(errPayload);
     }
