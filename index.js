@@ -9,7 +9,8 @@ const {
     TextInputBuilder, 
     TextInputStyle, 
     AttachmentBuilder, 
-    EmbedBuilder 
+    EmbedBuilder,
+    ChannelType
 } = require('discord.js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const sharp = require('sharp'); 
@@ -38,21 +39,21 @@ async function getAIResponse(prompt) {
     for (let i = 0; i < apiKeys.length; i++) {
         try {
             const genAI = new GoogleGenerativeAI(apiKeys[i]);
-            // Gunakan model yang stabil
-            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            // FIX ERROR 404: Menggunakan nama model terbaru yang valid
+            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
             const result = await model.generateContent(prompt);
             return result.response.text();
         } catch (error) {
             lastGeminiError = error.message;
-            console.warn(`Gemini Key ke-${i+1} gagal/limit:${error.message}`);
+            console.warn(`Gemini Key ke-${i+1} gagal:${error.message}`);
             continue; 
         }
     }
 
-    // 2. Jika semua Gemini limit, OTOMATIS pindah ke Groq API
+    // 2. Jika semua Gemini limit/error, OTOMATIS pindah ke Groq API
     if (process.env.GROQ_API_KEY) {
         try {
-            console.log("Semua Gemini gagal. Beralih ke Groq API...");
+            console.log("Gemini gagal. Beralih ke Groq API...");
             const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
                 method: "POST",
                 headers: {
@@ -60,7 +61,8 @@ async function getAIResponse(prompt) {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    model: "llama3-8b-8192", // Model groq super cepat
+                    // FIX ERROR 400: Menggunakan model Groq yang masih aktif
+                    model: "mixtral-8x7b-32768", 
                     messages: [{role: "user", content: prompt}]
                 })
             });
@@ -75,11 +77,10 @@ async function getAIResponse(prompt) {
                 return data.choices[0].message.content;
             }
         } catch(e) {
-            console.error(`Groq API juga gagal: ${e.message}`);
-            throw new Error(`Semua AI Gagal! \nGemini Error: ${lastGeminiError}\nGroq Error:${e.message}`);
+            throw new Error(`Semua AI Gagal! \nGemini: ${lastGeminiError}\nGroq:${e.message}`);
         }
     } else {
-        throw new Error(`Semua kunci Gemini Gagal/Limit (${lastGeminiError}) & Kunci Groq (GROQ_API_KEY) belum dipasang di Railway!`);
+        throw new Error(`Semua Gemini Gagal (${lastGeminiError}) & GROQ_API_KEY belum dipasang!`);
     }
 }
 
@@ -90,9 +91,9 @@ const ALLOWED_ROLE_ID = '1553818141157757109';
 const userSessions = new Map();
 const chatlogSessions = new Map(); 
 const aiMemories = new Map(); 
-const channelFilePath = path.join(__dirname, 'active_channels.json');
-// PATH KE FONT LOKAL YANG HARUS LU UPLOAD KE GITHUB
-const fontFilePath = path.join(__dirname, 'arial.ttf'); 
+const channelFilePath = path.join(process.cwd(), 'active_channels.json');
+// FIX LOKASI FONT: Menggunakan process.cwd() agar akurat di server Railway
+const fontFilePath = path.join(process.cwd(), 'arial.ttf'); 
 
 function loadActiveChannels() {
     try { if (fs.existsSync(channelFilePath)) return new Set(JSON.parse(fs.readFileSync(channelFilePath, 'utf8'))); } 
@@ -106,9 +107,9 @@ function saveActiveChannels(channelsSet) {
 const activeChannels = loadActiveChannels();
 
 client.once('clientReady', () => {
-    console.log(`Bot Velocity Elite Club (Hybrid AI & SSRP Anti-Kotak) online!`);
+    console.log(`Bot Velocity Elite Club (Hybrid v1.5 & Thread Chatlogs) online!`);
     if (!fs.existsSync(fontFilePath)) {
-        console.warn("⚠️ PERINGATAN: File 'arial.ttf' tidak ditemukan di folder! Teks SSRP mungkin masih akan kotak-kotak. Pastikan lu udah upload file font-nya ke GitHub!");
+        console.warn("⚠️ PERINGATAN: File 'arial.ttf' tidak ditemukan di root directory!");
     } else {
         console.log("✅ File font 'arial.ttf' ditemukan. SSRP aman dari kotak-kotak.");
     }
@@ -119,7 +120,7 @@ function getCleanName(displayName) {
     return displayName.trim();
 }
 
-// --- FUNGSI RENDER GAMBAR SSRP (MEMAKAI FONT LOKAL UNTUK MENGHILANGKAN KOTAK) ---
+// --- FUNGSI RENDER GAMBAR SSRP (FIX FONT KOTAK) ---
 async function renderImage(session, isPreview = true) {
     let sourceBuffer = session.imageBuffer;
     
@@ -154,7 +155,7 @@ async function renderImage(session, isPreview = true) {
         const marginX = Math.floor(25 * scale);
         const marginBottom = Math.floor(25 * scale);
         const fontSize = Math.floor(16 * scale);
-        const strokeWidth = Math.max(2, Math.floor(3 * scale));
+        const strokeWidth = Math.max(2, Math.floor(3 * scale)); 
 
         const yPositions = {
             'top-left': marginBottom + Math.floor(15 * scale),
@@ -179,12 +180,10 @@ async function renderImage(session, isPreview = true) {
                 const textAnchor = pos.includes('right') ? 'end' : 'start';
                 const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
                 
-                // KITA PAKAI CustomFont DENGAN ATURAN @font-face SVG (AGAR MEMBACA FILE LOKAL)
-                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="CustomFont, sans-serif" font-size="${fontSize}" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill" text-anchor="${textAnchor}">${safeLine}</text>\n`;
+                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="CustomFont, Arial, sans-serif" font-size="${fontSize}" font-weight="900" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill" text-anchor="${textAnchor}">${safeLine}</text>\n`;
             });
         }
 
-        // KITA KONVERSI FILE FONT arial.ttf JADI BASE64 UNTUK DIINJEKSI LANGSUNG KE SVG
         let fontBase64 = "";
         try {
              if (fs.existsSync(fontFilePath)) {
@@ -193,7 +192,8 @@ async function renderImage(session, isPreview = true) {
              }
         } catch(e) {}
 
-        const fontFaceStr = fontBase64 ? `<defs><style>@font-face { font-family: "CustomFont"; src: url("data:font/ttf;base64,${fontBase64}") format("truetype"); }</style></defs>` : '';
+        // Wajib menggunakan data URI base64 agar sharp/librsvg bisa ngebaca fontnya
+        const fontFaceStr = fontBase64 ? `<defs><style>@font-face { font-family: "CustomFont"; src: url("data:font/truetype;charset=utf-8;base64,${fontBase64}") format("truetype"); }</style></defs>` : '';
 
         const svgImage = `<svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">${fontFaceStr}${svgTexts}</svg>`;
         const svgBuffer = Buffer.from(svgImage);
@@ -447,12 +447,23 @@ client.on('interactionCreate', async (interaction) => {
                             await waitMsg.delete().catch(() => {});
                         }
                         
-                        await msg.channel.send(`✅ **Ekstraksi Selesai!** (${clSession.lines} baris per blok):`);
+                        // FITUR THREAD (UTAS) UNTUK CHATLOGS
+                        const replyMsg = await msg.channel.send(`✅ **Ekstraksi Selesai!** (${clSession.lines} baris per blok). Membuka thread untuk hasilnya...`);
+                        
+                        const thread = await msg.channel.threads.create({
+                            name: `Chatlogs-${msg.author.username}`,
+                            autoArchiveDuration: 60,
+                            reason: 'Hasil ekstraksi chatlog SSRP',
+                            type: ChannelType.PublicThread
+                        });
+
                         for (let i = 0; i < finalTexts.length; i += clSession.lines) {
                             const chunk = finalTexts.slice(i, i + clSession.lines).join('\n');
                             const embedChunk = new EmbedBuilder().setDescription(chunk).setColor(0x2B2D31);
-                            await msg.channel.send({ embeds: [embedChunk] });
+                            await thread.send({ embeds: [embedChunk] });
                         }
+                        
+                        await thread.send(`<@${msg.author.id}> Ini hasil chatlog lu ya, Boss! Langsung copas aja ke SSRP.`);
                         chatlogSessions.delete(interaction.user.id);
                     } catch (err) {
                         await msg.channel.send(`Duh, gagal: \`${err.message}\` 💀`);
