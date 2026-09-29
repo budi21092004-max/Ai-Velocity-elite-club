@@ -39,8 +39,8 @@ async function getAIResponse(prompt) {
     for (let i = 0; i < apiKeys.length; i++) {
         try {
             const genAI = new GoogleGenerativeAI(apiKeys[i]);
-            // FIX: Menggunakan model resmi gemini-1.5-flash yang valid
-            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            // MENGGUNAKAN GEMINI 3.8 FLASH SESUAI PERMINTAAN BOSS
+            const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
             const result = await model.generateContent(prompt);
             return result.response.text();
         } catch (error) {
@@ -61,7 +61,7 @@ async function getAIResponse(prompt) {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    // FIX: Menggunakan model Groq terbaru yang aktif (llama-3.1-8b-instant)
+                    // Menggunakan model Groq yang terjamin aktif
                     model: "llama-3.1-8b-instant", 
                     messages: [{role: "user", content: prompt}]
                 })
@@ -105,7 +105,7 @@ function saveActiveChannels(channelsSet) {
 const activeChannels = loadActiveChannels();
 
 client.once('clientReady', () => {
-    console.log(`Bot Velocity Elite Club (Hybrid AI & Thread Fixed) online!`);
+    console.log(`Bot Velocity Elite Club (Hybrid 3.8 Flash & Thread) online!`);
 });
 
 function getCleanName(displayName) {
@@ -113,7 +113,7 @@ function getCleanName(displayName) {
     return displayName.trim();
 }
 
-// --- FUNGSI RENDER GAMBAR SSRP (FIX FONT KOTAK MENGGUNAKAN DEJAVU SANS LINUX) ---
+// --- FUNGSI RENDER GAMBAR SSRP ---
 async function renderImage(session, isPreview = true) {
     let sourceBuffer = session.imageBuffer;
     
@@ -173,7 +173,6 @@ async function renderImage(session, isPreview = true) {
                 const textAnchor = pos.includes('right') ? 'end' : 'start';
                 const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
                 
-                // Menggunakan DejaVu Sans yang pasti ada di Linux/Railway agar tidak kotak-kotak
                 svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="DejaVu Sans, Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill" text-anchor="${textAnchor}">${safeLine}</text>\n`;
             });
         }
@@ -430,7 +429,6 @@ client.on('interactionCreate', async (interaction) => {
                             await waitMsg.delete().catch(() => {});
                         }
                         
-                        // FITUR THREAD (UTAS) OTOMATIS
                         const replyMsg = await msg.channel.send(`✅ **Ekstraksi Selesai!** (${clSession.lines} baris per blok). Membuka thread untuk hasilnya...`);
                         
                         const thread = await msg.channel.threads.create({
