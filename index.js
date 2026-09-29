@@ -352,9 +352,8 @@ client.on('interactionCreate', async (interaction) => {
                         const attachment = msg.attachments.first();
                         const response = await fetch(attachment.url);
                         const textData = await response.text();
-                        await msg.delete().catch(() => {}); 
-                        await interaction.deleteReply().catch(() => {}); 
-                        await interaction.message.delete().catch(() => {}); 
+
+                        // Fitur hapus otomatis dihilangkan di sini
 
                         let lines = textData.split('\n');
                         let cleanedLines = [];
@@ -479,7 +478,6 @@ client.on('interactionCreate', async (interaction) => {
                 try {
                     const attachment = msg.attachments.first();
                     
-                    // FETCH DULUAN: Ditambah headers User-Agent biar gak diblokir Discord
                     const origRes = await fetch(attachment.url, {
                         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
                     });
@@ -489,10 +487,7 @@ client.on('interactionCreate', async (interaction) => {
                     const origBuf = await origRes.arrayBuffer();
                     session.imageBuffer = Buffer.from(origBuf);
 
-                    // KALAU SUKSES, BARU HAPUS PESAN DAN TOMBOL LAMA
-                    await msg.delete().catch(() => {});
-                    await interaction.deleteReply().catch(() => {});
-                    await interaction.message.delete().catch(() => {});
+                    // Fitur hapus otomatis (msg.delete, interaction.deleteReply, interaction.message.delete) dihilangkan di sini
 
                     const metadata = await sharp(session.imageBuffer).metadata();
                     const origW = metadata.width; 
@@ -513,8 +508,7 @@ client.on('interactionCreate', async (interaction) => {
 
                 } catch (error) {
                     console.error("Gagal saat memproses upload:", error);
-                    // Karena error, pesan tombol TIDAK dihapus. Jadi user bisa langsung klik lagi.
-                    await msg.channel.send(`⚠️ Terjadi kendala saat memproses gambar: \`${error.message}\`. Tombol panel masih ada di atas, silakan klik **Upload Foto Mentah** lagi!`);
+                    await msg.channel.send(`⚠️ Terjadi kendala saat memproses gambar: \`${error.message}\`. Silakan upload foto yang lain.`);
                 }
             });
             return;
@@ -558,7 +552,6 @@ client.on('interactionCreate', async (interaction) => {
                 const finalBuffer = await renderImage(session, false);
                 const resultAttachment = new AttachmentBuilder(finalBuffer, { name: 'ssrp_final_hd.png' });
 
-                await interaction.message.delete().catch(() => {});
                 await interaction.channel.send({ content: `✅ **Selesai!** Ini hasil SSRP Ultra HD jernih kamu, <@${interaction.user.id}> 📸✨`, files: [resultAttachment] });
                 
                 let activeSession = userSessions.get(interaction.user.id);
