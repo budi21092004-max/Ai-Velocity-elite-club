@@ -32,24 +32,27 @@ const apiKeys = [
 ].filter(Boolean);
 
 async function getAIResponse(prompt) {
+    let lastGeminiError = "";
+    
     // 1. Coba gunakan Gemini secara bergantian
     for (let i = 0; i < apiKeys.length; i++) {
         try {
             const genAI = new GoogleGenerativeAI(apiKeys[i]);
-            // Menggunakan versi gemini yang resmi dan stabil
+            // Gunakan model yang stabil
             const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
             const result = await model.generateContent(prompt);
             return result.response.text();
         } catch (error) {
-            console.warn(`Gemini Key ke-${i+1} gagal/limit.`);
-            continue; // Lanjut ke key berikutnya
+            lastGeminiError = error.message;
+            console.warn(`Gemini Key ke-${i+1} gagal/limit:${error.message}`);
+            continue; 
         }
     }
 
     // 2. Jika semua Gemini limit, OTOMATIS pindah ke Groq API
     if (process.env.GROQ_API_KEY) {
         try {
-            console.log("Menggunakan Groq API sebagai cadangan...");
+            console.log("Semua Gemini gagal. Beralih ke Groq API...");
             const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
                 method: "POST",
                 headers: {
@@ -61,16 +64,23 @@ async function getAIResponse(prompt) {
                     messages: [{role: "user", content: prompt}]
                 })
             });
+            
+            if (!response.ok) {
+                 const errData = await response.text();
+                 throw new Error(`HTTP ${response.status} -${errData}`);
+            }
+
             const data = await response.json();
             if (data.choices && data.choices.length > 0) {
                 return data.choices[0].message.content;
             }
         } catch(e) {
-            console.warn(`Groq API juga gagal: ${e.message}`);
+            console.error(`Groq API juga gagal: ${e.message}`);
+            throw new Error(`Semua AI Gagal! \nGemini Error: ${lastGeminiError}\nGroq Error:${e.message}`);
         }
+    } else {
+        throw new Error(`Semua kunci Gemini Gagal/Limit (${lastGeminiError}) & Kunci Groq (GROQ_API_KEY) belum dipasang di Railway!`);
     }
-
-    throw new Error("Semua AI (Gemini & Groq) Limit/Error. Tambahkan API Key cadangan di Railway!");
 }
 
 const CREATOR_ID = '1179808811494690889';
@@ -80,27 +90,36 @@ const ALLOWED_ROLE_ID = '1553818141157757109';
 const userSessions = new Map();
 const chatlogSessions = new Map(); 
 const aiMemories = new Map(); 
-const filePath = path.join(__dirname, 'active_channels.json');
+const channelFilePath = path.join(__dirname, 'active_channels.json');
+// PATH KE FONT LOKAL YANG HARUS LU UPLOAD KE GITHUB
+const fontFilePath = path.join(__dirname, 'arial.ttf'); 
 
 function loadActiveChannels() {
-    try { if (fs.existsSync(filePath)) return new Set(JSON.parse(fs.readFileSync(filePath, 'utf8'))); } 
+    try { if (fs.existsSync(channelFilePath)) return new Set(JSON.parse(fs.readFileSync(channelFilePath, 'utf8'))); } 
     catch (e) {} return new Set();
 }
 
 function saveActiveChannels(channelsSet) {
-    try { fs.writeFileSync(filePath, JSON.stringify([...channelsSet]), 'utf8'); } 
+    try { fs.writeFileSync(channelFilePath, JSON.stringify([...channelsSet]), 'utf8'); } 
     catch (e) {}
 }
 const activeChannels = loadActiveChannels();
 
-client.once('clientReady', () => console.log(`Bot Velocity Elite Club (Hybrid AI & SSRP Sharp-Engine) online!`));
+client.once('clientReady', () => {
+    console.log(`Bot Velocity Elite Club (Hybrid AI & SSRP Anti-Kotak) online!`);
+    if (!fs.existsSync(fontFilePath)) {
+        console.warn("⚠️ PERINGATAN: File 'arial.ttf' tidak ditemukan di folder! Teks SSRP mungkin masih akan kotak-kotak. Pastikan lu udah upload file font-nya ke GitHub!");
+    } else {
+        console.log("✅ File font 'arial.ttf' ditemukan. SSRP aman dari kotak-kotak.");
+    }
+});
 
 function getCleanName(displayName) {
     if (displayName.includes('||')) return displayName.split('||').pop().trim();
     return displayName.trim();
 }
 
-// --- FUNGSI RENDER GAMBAR SSRP (FIX FONT KOTAK & MIRIP SAMP ASLI) ---
+// --- FUNGSI RENDER GAMBAR SSRP (MEMAKAI FONT LOKAL UNTUK MENGHILANGKAN KOTAK) ---
 async function renderImage(session, isPreview = true) {
     let sourceBuffer = session.imageBuffer;
     
@@ -135,7 +154,7 @@ async function renderImage(session, isPreview = true) {
         const marginX = Math.floor(25 * scale);
         const marginBottom = Math.floor(25 * scale);
         const fontSize = Math.floor(16 * scale);
-        const strokeWidth = Math.max(2, Math.floor(3 * scale)); // Outline lebih tebal
+        const strokeWidth = Math.max(2, Math.floor(3 * scale));
 
         const yPositions = {
             'top-left': marginBottom + Math.floor(15 * scale),
@@ -160,12 +179,23 @@ async function renderImage(session, isPreview = true) {
                 const textAnchor = pos.includes('right') ? 'end' : 'start';
                 const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
                 
-                // MENGGUNAKAN FONT DEJAVU SANS (DARI NIXPACKS) DAN PAINT-ORDER AGAR GARIS HITAM DI BELAKANG TEKS
-                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="DejaVu Sans, Arial, sans-serif" font-size="${fontSize}" font-weight="900" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill" text-anchor="${textAnchor}">${safeLine}</text>\n`;
+                // KITA PAKAI CustomFont DENGAN ATURAN @font-face SVG (AGAR MEMBACA FILE LOKAL)
+                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="CustomFont, sans-serif" font-size="${fontSize}" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill" text-anchor="${textAnchor}">${safeLine}</text>\n`;
             });
         }
 
-        const svgImage = `<svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">${svgTexts}</svg>`;
+        // KITA KONVERSI FILE FONT arial.ttf JADI BASE64 UNTUK DIINJEKSI LANGSUNG KE SVG
+        let fontBase64 = "";
+        try {
+             if (fs.existsSync(fontFilePath)) {
+                 const fontBuffer = fs.readFileSync(fontFilePath);
+                 fontBase64 = fontBuffer.toString('base64');
+             }
+        } catch(e) {}
+
+        const fontFaceStr = fontBase64 ? `<defs><style>@font-face { font-family: "CustomFont"; src: url("data:font/ttf;base64,${fontBase64}") format("truetype"); }</style></defs>` : '';
+
+        const svgImage = `<svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">${fontFaceStr}${svgTexts}</svg>`;
         const svgBuffer = Buffer.from(svgImage);
         imageObj = imageObj.composite([{ input: svgBuffer, blend: 'over' }]);
     }
@@ -344,7 +374,6 @@ client.on('messageCreate', async (message) => {
         const sys = `Teman nongkrong asik Velocity Elite Club. Panggil nama akrab user (sebelum titik dua). Jangan panggil V-CEO atau pakai ||. Sifat: Santai, gaul (lu/gw), ceplas-ceplos. Creator: ID ${CREATOR_ID}.`;
         const chatPrompt = `${sys}\n\n=== RIWAYAT ===\n${memory.join('\n')}\n\nBalas natural!`;
         
-        // Menggunakan sistem Hybrid AI (Anti-Limit)
         const replyText = await getAIResponse(chatPrompt);
         const finalReply = replyText.slice(0, 2000);
         memory.push(`Bot: ${finalReply}`);
@@ -352,7 +381,7 @@ client.on('messageCreate', async (message) => {
         await message.reply(finalReply);
     } catch (error) {
         console.error("AI Error:", error);
-        await message.reply(`Gagal memproses pesan AI: \`${error.message}\``);
+        await message.reply(`\`\`\`diff\n- GAGAL MEMPROSES AI -\n${error.message}\n\`\`\``);
     }
 });
 
@@ -410,11 +439,10 @@ client.on('interactionCreate', async (interaction) => {
                             const prompt = `Filter chatlog SA-MP ini. Hanya ambil baris berbahasa ${langName} dan baris aksi (*). Jangan ubah format, cukup hapus baris obrolan yang beda bahasa. Teks:\n${cleanedLines.join('\n')}`;
 
                             try {
-                                // Filter AI menggunakan sistem Hybrid Anti-Limit
                                 const aiResult = await getAIResponse(prompt);
                                 finalTexts = aiResult.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                             } catch (e) {
-                                await msg.channel.send(`⚠️ Filter AI gagal (${e.message}), menampilkan semua bahasa.`);
+                                await msg.channel.send(`⚠️ Filter AI gagal:\n\`${e.message}\`\n*Menampilkan semua bahasa.*`);
                             }
                             await waitMsg.delete().catch(() => {});
                         }
