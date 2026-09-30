@@ -25,7 +25,6 @@ const client = new Client({
     ],
 });
 
-// --- SISTEM HYBRID MULTI-API KEY (GEMINI + GROQ FALLBACK) ---
 const apiKeys = [
     process.env.GEMINI_API_KEY,
     process.env.GEMINI_API_KEY_2,
@@ -36,7 +35,6 @@ async function getAIResponse(prompt) {
     let lastGeminiError = "";
     const maxRotations = 2; 
     
-    // 1. Coba gunakan Gemini secara bergantian dengan sistem Retry 2x
     for (let attempt = 0; attempt < maxRotations; attempt++) {
         for (let i = 0; i < apiKeys.length; i++) {
             try {
@@ -46,8 +44,7 @@ async function getAIResponse(prompt) {
                 return result.response.text();
             } catch (error) {
                 lastGeminiError = error.message;
-                console.warn(`Gemini Key ke-${i+1} (Putaran ${attempt+1}) gagal:${error.message}`);
-                
+                console.warn(`Gemini Key ke-${i+1} gagal:${error.message}`);
                 if (error.message.includes('503') || error.message.includes('429')) {
                     await new Promise(resolve => setTimeout(resolve, 2000));
                 }
@@ -56,7 +53,6 @@ async function getAIResponse(prompt) {
         }
     }
 
-    // 2. Jika semua putaran Gemini gagal, OTOMATIS pindah ke Groq API
     if (process.env.GROQ_API_KEY) {
         try {
             console.log("Semua rotasi Gemini gagal. Beralih ke Groq API...");
@@ -67,7 +63,6 @@ async function getAIResponse(prompt) {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    // FIX MODEL GROQ: Menggunakan model standar yang dijamin aktif
                     model: "llama3-8b-8192", 
                     messages: [{role: "user", content: prompt}]
                 })
@@ -92,12 +87,13 @@ async function getAIResponse(prompt) {
 
 const CREATOR_ID = '1179808811494690889';
 const ALLOWED_ROLE_ID = '1553818141157757109';
-
-// State Management
 const userSessions = new Map();
 const chatlogSessions = new Map(); 
 const aiMemories = new Map(); 
 const channelFilePath = path.join(process.cwd(), 'active_channels.json');
+
+// --- FONT FIX: PASTIIN ADA ARIAL.TTF DI REPO GITHUB ---
+const fontFilePath = path.join(process.cwd(), 'arial.ttf'); 
 
 function loadActiveChannels() {
     try { if (fs.existsSync(channelFilePath)) return new Set(JSON.parse(fs.readFileSync(channelFilePath, 'utf8'))); } 
@@ -111,7 +107,12 @@ function saveActiveChannels(channelsSet) {
 const activeChannels = loadActiveChannels();
 
 client.once('clientReady', () => {
-    console.log(`Bot Velocity Elite Club (Hybrid AI & SSRP Fixed) online!`);
+    console.log(`Bot Velocity Elite Club (Anti Tofu & Fast Chatlog) online!`);
+    if (!fs.existsSync(fontFilePath)) {
+        console.warn("⚠️ PERINGATAN: File 'arial.ttf' tidak ditemukan! Pastikan sudah terupload di GitHub!");
+    } else {
+        console.log("✅ File 'arial.ttf' ditemukan! SSRP aman dari kotak-kotak.");
+    }
 });
 
 function getCleanName(displayName) {
@@ -119,7 +120,7 @@ function getCleanName(displayName) {
     return displayName.trim();
 }
 
-// --- FUNGSI RENDER GAMBAR SSRP ---
+// --- FUNGSI RENDER GAMBAR SSRP (FIX TUNTAS FONT KOTAK) ---
 async function renderImage(session, isPreview = true) {
     let sourceBuffer = session.imageBuffer;
     
@@ -134,17 +135,10 @@ async function renderImage(session, isPreview = true) {
     }).resize(targetW, targetH); 
 
     switch (session.filter) {
-        case 'grayscale': 
-            imageObj = imageObj.grayscale(); 
-            break;
-        case 'vibrant': 
-            imageObj = imageObj.modulate({ brightness: 1.1, saturation: 1.2 }); 
-            break;
-        case 'dark': 
-            imageObj = imageObj.modulate({ brightness: 0.85, saturation: 0.9 }); 
-            break;
-        default: 
-            break;
+        case 'grayscale': imageObj = imageObj.grayscale(); break;
+        case 'vibrant': imageObj = imageObj.modulate({ brightness: 1.1, saturation: 1.2 }); break;
+        case 'dark': imageObj = imageObj.modulate({ brightness: 0.85, saturation: 0.9 }); break;
+        default: break;
     }
 
     if (session.blocks.length > 0) {
@@ -168,10 +162,7 @@ async function renderImage(session, isPreview = true) {
             const lines = block.text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
             let yStart = yPositions[pos] ?? marginBottom;
 
-            if (pos.includes('bottom')) {
-                yStart -= (lines.length * lineHeight);
-            }
-
+            if (pos.includes('bottom')) yStart -= (lines.length * lineHeight);
             const xStart = pos.includes('right') ? targetW - marginX : marginX;
             
             lines.forEach((line, i) => {
@@ -179,19 +170,27 @@ async function renderImage(session, isPreview = true) {
                 const textAnchor = pos.includes('right') ? 'end' : 'start';
                 const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
                 
-                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="DejaVu Sans, Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill" text-anchor="${textAnchor}">${safeLine}</text>\n`;
+                svgTexts += `<text x="${xStart}" y="${yStart + (i * lineHeight)}" font-family="CustomArial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="${fillCol}" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill" text-anchor="${textAnchor}">${safeLine}</text>\n`;
             });
         }
 
-        const svgImage = `<svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">${svgTexts}</svg>`;
+        // BRUTAL FIX: Injeksi Base64 Font Arial ke dalam SVG
+        let fontBase64 = "";
+        try {
+            if (fs.existsSync(fontFilePath)) {
+                fontBase64 = fs.readFileSync(fontFilePath).toString('base64');
+            }
+        } catch(e) { console.error("Gagal load font:", e); }
+
+        const fontFaceStr = fontBase64 ? `<defs><style>@font-face { font-family: "CustomArial"; src: url("data:font/truetype;charset=utf-8;base64,${fontBase64}") format("truetype"); }</style></defs>` : '';
+
+        const svgImage = `<svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">${fontFaceStr}${svgTexts}</svg>`;
         const svgBuffer = Buffer.from(svgImage);
         imageObj = imageObj.composite([{ input: svgBuffer, blend: 'over' }]);
     }
-
     return await imageObj.png({ quality: isPreview ? 70 : 100 }).toBuffer();
 }
 
-// --- UI UPDATE FUNCTIONS ---
 async function updateChatlogsPanel(interaction, session) {
     const embed = new EmbedBuilder()
         .setTitle('🧹 AI Chatlogs Extractor')
@@ -243,7 +242,6 @@ async function updateStudioUI(interaction, session) {
         const previewAttachment = new AttachmentBuilder(buffer, { name: 'preview.png' });
         const embed = new EmbedBuilder().setTitle('🎛️ STUDIO INTERAKTIF SSRP').setDescription('⚠️ *Preview dioptimalkan otomatis. Hasil akhir (Finishing) tetap Ultra HD.*').setColor(0xFFA500).setImage('attachment://preview.png');
         
-        // FIX EMOJI: Mengganti ⬇ menjadi ⬇️ agar tidak crash
         const rowPan = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('pan_left').setEmoji('⬅️').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('pan_up').setEmoji('⬆️').setStyle(ButtonStyle.Secondary),
@@ -276,7 +274,6 @@ async function updateStudioUI(interaction, session) {
     }
 }
 
-// --- MAIN LISTENER ---
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     const content = message.content.trim();
@@ -294,7 +291,7 @@ client.on('messageCreate', async (message) => {
             .setColor(0x00FF00);
 
         const rowLang = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder().setCustomId('clog_lang').setPlaceholder('🗣️️ Pilih Filter Bahasa (AI)...').addOptions([
+            new StringSelectMenuBuilder().setCustomId('clog_lang').setPlaceholder('🗣️ Pilih Filter Bahasa (AI)...').addOptions([
                 { label: 'Semua Bahasa (Tanpa Filter AI)', value: 'all' },
                 { label: 'Fokus Bahasa Indonesia', value: 'id' },
                 { label: 'Fokus Bahasa Inggris', value: 'en' }
@@ -374,7 +371,6 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// --- INTERAKSI BUTTON & MODAL ---
 client.on('interactionCreate', async (interaction) => {
     if (interaction.customId && interaction.customId.startsWith('clog_')) {
         let clSession = chatlogSessions.get(interaction.user.id);
@@ -422,10 +418,13 @@ client.on('interactionCreate', async (interaction) => {
                         let finalTexts = cleanedLines;
 
                         if (clSession.lang !== 'all') {
-                            const waitMsg = await msg.channel.send('⏳ *AI sedang menyeleksi bahasa chatlog kamu...*');
+                            const waitMsg = await msg.channel.send('⏳ *AI sedang menyeleksi bahasa chatlog kamu... (Membatasi 100 baris pertama agar AI tidak berat)*');
                             const langName = clSession.lang === 'id' ? 'Indonesia' : 'Inggris';
                             
-                            const prompt = `Filter chatlog SA-MP ini. Hanya ambil baris berbahasa ${langName} dan baris aksi (*). Jangan ubah format, cukup hapus baris obrolan yang beda bahasa. Teks:\n${cleanedLines.join('\n')}`;
+                            // FIX CHATLOG STUCK: Mencegah AI membaca file terlalu berat, batasi 100 baris obrolan
+                            const limitedLines = cleanedLines.slice(0, 100);
+                            
+                            const prompt = `Filter chatlog SA-MP ini. Hanya ambil baris berbahasa ${langName} dan baris aksi (*). Jangan ubah format, cukup hapus baris obrolan yang beda bahasa. Teks:\n${limitedLines.join('\n')}`;
 
                             try {
                                 const aiResult = await getAIResponse(prompt);
@@ -536,7 +535,6 @@ client.on('interactionCreate', async (interaction) => {
                 
                 try {
                     const attachment = msg.attachments.first();
-                    
                     const origRes = await fetch(attachment.url, {
                         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
                     });
