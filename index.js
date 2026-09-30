@@ -34,9 +34,9 @@ const apiKeys = [
 
 async function getAIResponse(prompt) {
     let lastGeminiError = "";
-    const maxRotations = 2; // FIX: Nge-ulang rotasi 2 kali kalau server down (503)
+    const maxRotations = 2; 
     
-    // 1. Coba gunakan Gemini secara bergantian dengan sistem Retry 2x putaran
+    // 1. Coba gunakan Gemini secara bergantian dengan sistem Retry 2x
     for (let attempt = 0; attempt < maxRotations; attempt++) {
         for (let i = 0; i < apiKeys.length; i++) {
             try {
@@ -48,7 +48,6 @@ async function getAIResponse(prompt) {
                 lastGeminiError = error.message;
                 console.warn(`Gemini Key ke-${i+1} (Putaran ${attempt+1}) gagal:${error.message}`);
                 
-                // Kalau error karena server sibuk (503/429), kasih jeda 2 detik sebelum lanjut ke key berikutnya
                 if (error.message.includes('503') || error.message.includes('429')) {
                     await new Promise(resolve => setTimeout(resolve, 2000));
                 }
@@ -68,8 +67,8 @@ async function getAIResponse(prompt) {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    // FIX: Ganti ke model Groq yang stabil dan aktif
-                    model: "llama-3.1-70b-versatile", 
+                    // FIX MODEL GROQ: Menggunakan model standar yang dijamin aktif
+                    model: "llama3-8b-8192", 
                     messages: [{role: "user", content: prompt}]
                 })
             });
@@ -112,7 +111,7 @@ function saveActiveChannels(channelsSet) {
 const activeChannels = loadActiveChannels();
 
 client.once('clientReady', () => {
-    console.log(`Bot Velocity Elite Club (Hybrid AI & SSRP Jernih) online!`);
+    console.log(`Bot Velocity Elite Club (Hybrid AI & SSRP Fixed) online!`);
 });
 
 function getCleanName(displayName) {
@@ -229,7 +228,7 @@ async function updateInitialPanel(interaction, session) {
     const embed = new EmbedBuilder().setTitle('✨ SSRP Builder Pro (Setup)').setDescription(`**Daftar Chatlog Anda:**\n${blocksDesc}\n\n1. Tambahkan Chatlog di posisi yang diinginkan.\n2. Klik **Upload Foto Mentah** jika sudah selesai.`).setColor(0x5865F2);
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_add_block').setLabel('📝 Tambah Chatlog').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('btn_req_upload').setLabel('🖼️️ Upload Foto Mentah').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('btn_req_upload').setLabel('🖼️ Upload Foto Mentah').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('btn_reset_blocks').setLabel('🗑️ Reset Teks').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_cancel').setLabel('✖️ Batal').setStyle(ButtonStyle.Danger)
     );
@@ -244,10 +243,11 @@ async function updateStudioUI(interaction, session) {
         const previewAttachment = new AttachmentBuilder(buffer, { name: 'preview.png' });
         const embed = new EmbedBuilder().setTitle('🎛️ STUDIO INTERAKTIF SSRP').setDescription('⚠️ *Preview dioptimalkan otomatis. Hasil akhir (Finishing) tetap Ultra HD.*').setColor(0xFFA500).setImage('attachment://preview.png');
         
+        // FIX EMOJI: Mengganti ⬇ menjadi ⬇️ agar tidak crash
         const rowPan = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('pan_left').setEmoji('⬅️').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('pan_up').setEmoji('⬆️').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('pan_down').setEmoji('⬇️️').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('pan_down').setEmoji('⬇️').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('pan_right').setEmoji('➡️').setStyle(ButtonStyle.Secondary)
         );
         const rowZoom = new ActionRowBuilder().addComponents(
@@ -294,7 +294,7 @@ client.on('messageCreate', async (message) => {
             .setColor(0x00FF00);
 
         const rowLang = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder().setCustomId('clog_lang').setPlaceholder('🗣️ Pilih Filter Bahasa (AI)...').addOptions([
+            new StringSelectMenuBuilder().setCustomId('clog_lang').setPlaceholder('🗣️️ Pilih Filter Bahasa (AI)...').addOptions([
                 { label: 'Semua Bahasa (Tanpa Filter AI)', value: 'all' },
                 { label: 'Fokus Bahasa Indonesia', value: 'id' },
                 { label: 'Fokus Bahasa Inggris', value: 'en' }
@@ -360,7 +360,6 @@ client.on('messageCreate', async (message) => {
         if (memory.length > 10) memory.shift(); 
         aiMemories.set(channelId, memory);
 
-        // FIX: Update System Prompt biar AI lebih lawak dan WAJIB pakai emoji emosi
         const sys = `Teman nongkrong asik Velocity Elite Club. Panggil nama akrab user (sebelum titik dua). Jangan panggil V-CEO atau pakai ||. Sifat: Santai, gaul (lu/gw), ceplas-ceplos, sarkas ringan, dan lawak. WAJIB selalu gunakan banyak emoji ekspresif (seperti 😸, 🤪, 💀, 🔥, 😭, 🤬) yang sesuai dengan emosimu di setiap balasan biar makin hidup! Creator: ID ${CREATOR_ID}.`;
         const chatPrompt = `${sys}\n\n=== RIWAYAT ===\n${memory.join('\n')}\n\nBalas natural!`;
         
@@ -566,7 +565,7 @@ client.on('interactionCreate', async (interaction) => {
 
                 } catch (error) {
                     console.error("Gagal saat memproses upload:", error);
-                    await msg.channel.send(`⚠️️ Terjadi kendala saat memproses gambar: \`${error.message}\`. Silakan upload foto yang lain.`);
+                    await msg.channel.send(`⚠️ Terjadi kendala saat memproses gambar: \`${error.message}\`. Silakan upload foto yang lain.`);
                 }
             });
             return;
