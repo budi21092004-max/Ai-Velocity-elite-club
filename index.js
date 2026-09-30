@@ -34,26 +34,33 @@ const apiKeys = [
 
 async function getAIResponse(prompt) {
     let lastGeminiError = "";
+    const maxRotations = 2; // FIX: Nge-ulang rotasi 2 kali kalau server down (503)
     
-    // 1. Coba gunakan Gemini secara bergantian
-    for (let i = 0; i < apiKeys.length; i++) {
-        try {
-            const genAI = new GoogleGenerativeAI(apiKeys[i]);
-            // MENGGUNAKAN GEMINI 3.8 FLASH SESUAI PERMINTAAN BOSS
-            const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
-            const result = await model.generateContent(prompt);
-            return result.response.text();
-        } catch (error) {
-            lastGeminiError = error.message;
-            console.warn(`Gemini Key ke-${i+1} gagal:${error.message}`);
-            continue; 
+    // 1. Coba gunakan Gemini secara bergantian dengan sistem Retry 2x putaran
+    for (let attempt = 0; attempt < maxRotations; attempt++) {
+        for (let i = 0; i < apiKeys.length; i++) {
+            try {
+                const genAI = new GoogleGenerativeAI(apiKeys[i]);
+                const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
+                const result = await model.generateContent(prompt);
+                return result.response.text();
+            } catch (error) {
+                lastGeminiError = error.message;
+                console.warn(`Gemini Key ke-${i+1} (Putaran ${attempt+1}) gagal:${error.message}`);
+                
+                // Kalau error karena server sibuk (503/429), kasih jeda 2 detik sebelum lanjut ke key berikutnya
+                if (error.message.includes('503') || error.message.includes('429')) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+                continue; 
+            }
         }
     }
 
-    // 2. Jika semua Gemini limit/error, OTOMATIS pindah ke Groq API
+    // 2. Jika semua putaran Gemini gagal, OTOMATIS pindah ke Groq API
     if (process.env.GROQ_API_KEY) {
         try {
-            console.log("Gemini gagal. Beralih ke Groq API...");
+            console.log("Semua rotasi Gemini gagal. Beralih ke Groq API...");
             const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
                 method: "POST",
                 headers: {
@@ -61,8 +68,8 @@ async function getAIResponse(prompt) {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    // Menggunakan model Groq yang terjamin aktif
-                    model: "llama-3.1-8b-instant", 
+                    // FIX: Ganti ke model Groq yang stabil dan aktif
+                    model: "llama-3.1-70b-versatile", 
                     messages: [{role: "user", content: prompt}]
                 })
             });
@@ -77,10 +84,10 @@ async function getAIResponse(prompt) {
                 return data.choices[0].message.content;
             }
         } catch(e) {
-            throw new Error(`Semua AI Gagal! \nGemini: ${lastGeminiError}\nGroq:${e.message}`);
+            throw new Error(`Semua AI Gagal! \nGemini (Overload): ${lastGeminiError}\nGroq Error:${e.message}`);
         }
     } else {
-        throw new Error(`Semua Gemini Gagal (${lastGeminiError}) & GROQ_API_KEY belum dipasang!`);
+        throw new Error(`Semua rotasi Gemini Gagal/Overload (${lastGeminiError}) & GROQ_API_KEY belum dipasang!`);
     }
 }
 
@@ -105,7 +112,7 @@ function saveActiveChannels(channelsSet) {
 const activeChannels = loadActiveChannels();
 
 client.once('clientReady', () => {
-    console.log(`Bot Velocity Elite Club (Hybrid 3.8 Flash & Thread) online!`);
+    console.log(`Bot Velocity Elite Club (Hybrid AI & SSRP Jernih) online!`);
 });
 
 function getCleanName(displayName) {
@@ -222,7 +229,7 @@ async function updateInitialPanel(interaction, session) {
     const embed = new EmbedBuilder().setTitle('✨ SSRP Builder Pro (Setup)').setDescription(`**Daftar Chatlog Anda:**\n${blocksDesc}\n\n1. Tambahkan Chatlog di posisi yang diinginkan.\n2. Klik **Upload Foto Mentah** jika sudah selesai.`).setColor(0x5865F2);
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_add_block').setLabel('📝 Tambah Chatlog').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('btn_req_upload').setLabel('🖼️ Upload Foto Mentah').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('btn_req_upload').setLabel('🖼️️ Upload Foto Mentah').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('btn_reset_blocks').setLabel('🗑️ Reset Teks').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_cancel').setLabel('✖️ Batal').setStyle(ButtonStyle.Danger)
     );
@@ -240,7 +247,7 @@ async function updateStudioUI(interaction, session) {
         const rowPan = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('pan_left').setEmoji('⬅️').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('pan_up').setEmoji('⬆️').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('pan_down').setEmoji('⬇️').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('pan_down').setEmoji('⬇️️').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('pan_right').setEmoji('➡️').setStyle(ButtonStyle.Secondary)
         );
         const rowZoom = new ActionRowBuilder().addComponents(
@@ -353,7 +360,8 @@ client.on('messageCreate', async (message) => {
         if (memory.length > 10) memory.shift(); 
         aiMemories.set(channelId, memory);
 
-        const sys = `Teman nongkrong asik Velocity Elite Club. Panggil nama akrab user (sebelum titik dua). Jangan panggil V-CEO atau pakai ||. Sifat: Santai, gaul (lu/gw), ceplas-ceplos. Creator: ID ${CREATOR_ID}.`;
+        // FIX: Update System Prompt biar AI lebih lawak dan WAJIB pakai emoji emosi
+        const sys = `Teman nongkrong asik Velocity Elite Club. Panggil nama akrab user (sebelum titik dua). Jangan panggil V-CEO atau pakai ||. Sifat: Santai, gaul (lu/gw), ceplas-ceplos, sarkas ringan, dan lawak. WAJIB selalu gunakan banyak emoji ekspresif (seperti 😸, 🤪, 💀, 🔥, 😭, 🤬) yang sesuai dengan emosimu di setiap balasan biar makin hidup! Creator: ID ${CREATOR_ID}.`;
         const chatPrompt = `${sys}\n\n=== RIWAYAT ===\n${memory.join('\n')}\n\nBalas natural!`;
         
         const replyText = await getAIResponse(chatPrompt);
@@ -558,7 +566,7 @@ client.on('interactionCreate', async (interaction) => {
 
                 } catch (error) {
                     console.error("Gagal saat memproses upload:", error);
-                    await msg.channel.send(`⚠️ Terjadi kendala saat memproses gambar: \`${error.message}\`. Silakan upload foto yang lain.`);
+                    await msg.channel.send(`⚠️️ Terjadi kendala saat memproses gambar: \`${error.message}\`. Silakan upload foto yang lain.`);
                 }
             });
             return;
